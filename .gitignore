@@ -1,0 +1,20 @@
+# build / packaging
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# environments
+.venv/
+venv/
+
+# tooling
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+
+# pipeline data — large, regenerable, and not ours to publish
+work/
+out/

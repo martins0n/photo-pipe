@@ -1,0 +1,30 @@
+name: Provia / Standard
+description: >
+  The neutral reference. Gentle S-curve, honest colour, nothing pushed.
+  Copy this file as the starting point for a new look.
+order: 1
+
+# --- scene-linear stage (before the image is gamma-encoded) ---
+exposure: 0.0            # stops
+temp: 0.0                # -1..1, positive warms
+tint: 0.0                # -1..1, positive goes magenta
+highlight_rolloff: 1.6   # 1.0 = off; higher pulls more overbright back into range
+
+# --- tone, in display space; x/y both 0..1 ---
+curve:
+  - [0.00, 0.000]
+  - [0.25, 0.235]
+  - [0.50, 0.500]
+  - [0.75, 0.775]
+  - [1.00, 1.000]
+
+# --- colour ---
+saturation: 1.05         # 1.0 = unchanged
+vibrance: 0.08           # spares already-saturated pixels
+
+# --- detail ---
+clarity: 0.10            # large-radius local contrast
+sharpen:
+  amount: 0.45
+  radius: 0.8
+  threshold: 1.0

@@ -1,0 +1,42 @@
+name: Classic Chrome
+description: >
+  Muted documentary look. Lifted, slightly dipped blacks, desaturated palette,
+  reds pulled toward brick and greens toward olive.
+order: 4
+
+exposure: 0.0
+temp: -0.03
+tint: 0.02
+highlight_rolloff: 1.70
+
+curve:
+  - [0.00, 0.030]        # matte black point
+  - [0.12, 0.105]        # shadow dip is what makes the look read as "chrome"
+  - [0.30, 0.275]
+  - [0.50, 0.495]
+  - [0.75, 0.775]
+  - [1.00, 0.985]
+
+saturation: 0.80
+vibrance: 0.0
+
+hsl:
+  red:     {hue: 8, sat: -12}
+  orange:  {sat: -8, lum: 2}
+  yellow:  {hue: -8, sat: -18, lum: -3}
+  green:   {hue: -12, sat: -22, lum: -5}
+  aqua:    {sat: -20}
+  blue:    {hue: 6, sat: -6, lum: -4}
+  magenta: {sat: -15}
+
+split_tone:
+  shadows: [-5, 0, 7]           # cool-teal shadows
+  highlights: [6, 2, -4]        # warm highlights
+  balance: 0.45
+  strength: 1.0
+
+clarity: 0.12
+sharpen:
+  amount: 0.50
+  radius: 0.8
+  threshold: 1.0

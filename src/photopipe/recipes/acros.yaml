@@ -1,0 +1,42 @@
+name: Acros
+description: >
+  Black and white with a panchromatic response — deep blacks, strong micro
+  contrast, fine grain that tightens up rather than mushing the detail.
+order: 5
+
+exposure: 0.0
+highlight_rolloff: 1.75
+
+curve:
+  - [0.00, 0.000]
+  - [0.20, 0.155]
+  - [0.50, 0.500]
+  - [0.80, 0.840]        # gentler push up top; the shoulder handles the rest
+  - [1.00, 0.990]
+
+# The mix is the emulsion's colour sensitivity. Weighting red above blue is
+# what separates sky from masonry — a mix that merely tracks luminance
+# (e.g. [0.30, 0.60, 0.10]) renders a blue sky within 1.5% of its colour
+# brightness, which is why bright frames came out as pale haze.
+monochrome:
+  mix: [0.45, 0.45, 0.10]   # roughly a yellow filter
+  filter: 1.0
+
+hsl:
+  blue: {lum: -22}       # deepens sky further
+  aqua: {lum: -14}
+
+split_tone:
+  shadows: [-2, 0, 3]    # the faintest cool tone in the blacks
+  highlights: [3, 1, -2]
+  balance: 0.5
+  strength: 0.5
+
+clarity: 0.25
+sharpen:
+  amount: 0.60
+  radius: 0.8
+  threshold: 1.0
+grain:
+  amount: 0.55
+  size: 1.4

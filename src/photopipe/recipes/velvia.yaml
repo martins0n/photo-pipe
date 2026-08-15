@@ -1,0 +1,36 @@
+name: Velvia / Vivid
+description: >
+  Slide-film punch. Deep shadows, hard contrast, saturated greens and blues.
+  Unforgiving on skin, superb on landscape and sky.
+order: 2
+
+exposure: -0.10          # protect highlights before the contrast goes on
+temp: 0.0
+tint: 0.0
+highlight_rolloff: 1.95
+
+curve:
+  - [0.00, 0.000]
+  - [0.15, 0.100]
+  - [0.35, 0.310]
+  - [0.50, 0.500]
+  - [0.70, 0.740]
+  - [0.88, 0.930]
+  - [1.00, 1.000]
+
+saturation: 1.32
+vibrance: 0.10
+
+hsl:
+  red:    {sat: 15}
+  orange: {sat: 8, lum: -3}
+  yellow: {hue: -5, sat: 12}
+  green:  {hue: -6, sat: 25, lum: -8}
+  aqua:   {sat: 20, lum: -6}
+  blue:   {hue: 6, sat: 30, lum: -10}
+
+clarity: 0.18
+sharpen:
+  amount: 0.55
+  radius: 0.8
+  threshold: 1.0

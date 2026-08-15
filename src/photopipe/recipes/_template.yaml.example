@@ -1,0 +1,90 @@
+# Recipe template — every supported key, with its default.
+#
+# To make a new look: copy this to recipes/my-look.yaml, delete everything you
+# don't need, and run `./pipe.py run <photos> --recipes my-look`. The filename
+# (minus .yaml) is the slug you pass on the command line. Any key you omit is a
+# no-op, so a three-line recipe is perfectly valid.
+#
+# The order of operations is fixed by the engine and is listed below in the
+# order it actually runs. A recipe supplies numbers, never sequencing.
+
+name: My Look                 # shown in the collage header
+description: >
+  Free text. Wrapped and printed by `./pipe.py recipes`.
+order: 100                    # sort position in listings and collage columns
+
+# ---------------------------------------------------------------------------
+# 1. Scene-linear stage — runs before the image is gamma-encoded.
+#    This is where exposure-like changes belong; doing them here keeps colour
+#    relationships physically sensible.
+# ---------------------------------------------------------------------------
+exposure: 0.0                 # stops, +/-. -0.3 protects highlights before contrast.
+temp: 0.0                     # -1..1, positive warms (raises R, lowers B)
+tint: 0.0                     # -1..1, positive pushes magenta (lowers G)
+highlight_rolloff: 1.0        # 1.0 = off (exact identity).
+                              # 1.5 gentle, 2.0 strong. The value is the linear
+                              # level that gets mapped to pure white, so higher
+                              # numbers rescue more overbright detail.
+highlight_knee: 0.6           # everything below this is left exactly alone;
+                              # only above it does the shoulder bend. Lower it
+                              # for a softer, earlier rolloff.
+
+# ---------------------------------------------------------------------------
+# 2. Tone — display space, both axes 0..1. Monotone cubic through your points,
+#    so the curve can never overshoot and invert.
+# ---------------------------------------------------------------------------
+curve:
+  - [0.00, 0.00]              # raise y here for a matte/lifted black point
+  - [0.25, 0.25]              # pull down for deeper shadows
+  - [0.50, 0.50]
+  - [0.75, 0.75]              # push up for brighter highlights
+  - [1.00, 1.00]              # lower y here for a soft, non-clipping white
+
+rgb_curves:                   # optional per-channel curves, same format
+  red:   []                   # e.g. lift red's black point for a faded look
+  green: []
+  blue:  []
+
+# ---------------------------------------------------------------------------
+# 3. Colour
+# ---------------------------------------------------------------------------
+# Eight hue bands: red orange yellow green aqua blue purple magenta
+#   hue: degrees to rotate    sat: percent    lum: percent
+# Bands fade out on near-grey pixels, so shadow noise doesn't pick up colour.
+hsl:
+  red:     {hue: 0, sat: 0, lum: 0}
+  orange:  {hue: 0, sat: 0, lum: 0}    # this is the skin-tone band
+  yellow:  {hue: 0, sat: 0, lum: 0}
+  green:   {hue: 0, sat: 0, lum: 0}
+  aqua:    {hue: 0, sat: 0, lum: 0}
+  blue:    {hue: 0, sat: 0, lum: 0}    # lum here controls how dark the sky goes
+  purple:  {hue: 0, sat: 0, lum: 0}
+  magenta: {hue: 0, sat: 0, lum: 0}
+
+saturation: 1.0               # global multiplier; ignored when monochrome is set
+vibrance: 0.0                 # 0..1, boosts only the less-saturated pixels
+
+# Setting `monochrome` replaces saturation/vibrance entirely. `mix` is the
+# emulsion's colour sensitivity. It runs AFTER hsl, so hsl lum tweaks behave
+# like screwing a coloured filter onto the lens.
+# monochrome:
+#   mix: [0.30, 0.60, 0.10]   # R, G, B response; normalised automatically
+#   filter: 1.0               # 0 = plain luminance, 1 = full mix
+
+split_tone:                   # signed RGB pushes, roughly -100..100
+  shadows:    [0, 0, 0]       # e.g. [-5, 0, 7] for cool-teal shadows
+  highlights: [0, 0, 0]       # e.g. [6, 2, -4] for warm highlights
+  balance: 0.5                # crossover point between the two
+  strength: 1.0               # both tints fade out at pure black/white
+
+# ---------------------------------------------------------------------------
+# 4. Detail
+# ---------------------------------------------------------------------------
+clarity: 0.0                  # large-radius local contrast, ~0.1 subtle, 0.3 heavy
+sharpen:
+  amount: 0.0                 # fine unsharp on luminance only, 0.4-0.6 typical
+  radius: 0.8
+  threshold: 1.0              # gates flat areas so noise isn't sharpened
+grain:
+  amount: 0.0                 # 0.5 is clearly visible film grain
+  size: 1.0                   # >1 makes coarser clumps

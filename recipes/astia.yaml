@@ -1,0 +1,39 @@
+name: Astia / Soft
+description: >
+  Softer contrast and warm, forgiving skin tones. Holds highlight detail on
+  faces where Velvia would burn them.
+order: 3
+
+exposure: 0.05
+temp: 0.06               # a touch warm
+tint: 0.0
+highlight_rolloff: 1.50
+
+curve:
+  - [0.00, 0.012]        # slight lift keeps shadows open
+  - [0.25, 0.255]
+  - [0.50, 0.515]
+  - [0.75, 0.775]
+  - [1.00, 0.985]        # soft shoulder, no hard white
+
+saturation: 1.12
+vibrance: 0.15
+
+hsl:
+  red:    {hue: 3, sat: -4}
+  orange: {sat: -4, lum: 6}     # skin
+  yellow: {hue: -3, sat: 4}
+  green:  {hue: -4, sat: 5}
+  blue:   {sat: 6}
+
+split_tone:
+  highlights: [6, 2, -5]        # warm highlights
+  shadows: [-2, 0, 4]           # faintly cool shadows
+  balance: 0.5
+  strength: 0.7
+
+clarity: 0.05
+sharpen:
+  amount: 0.40
+  radius: 0.9
+  threshold: 1.5
