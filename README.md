@@ -391,8 +391,7 @@ Recipes are looked up in this order, so editing a look never means touching an
 installed package: `$PHOTOPIPE_RECIPES` → `./recipes` → the bundled defaults.
 
 ```bash
-pytest                                          # 67 tests, no photos required
-PHOTOPIPE_UPDATE_GOLDEN=1 pytest tests/test_regression.py   # re-bless snapshots
+pytest        # 67 tests, no photos required
 ```
 
 Two kinds of test. The unit tests check **properties** — a shoulder is
@@ -407,3 +406,33 @@ fails six of them.
 The scene is built, not loaded, so the suite needs no photos: an exposure ramp
 reaching past white for the shoulder, a vertical hue sweep for the colour
 stages, and dark and bright corners for vignette and split-tone.
+
+### When a snapshot fails
+
+The expected output lives in `tests/golden/render.json`. Editing a recipe or
+an operator makes the render move, so those tests fail — that is the whole
+point, and the failure tells you how far it moved:
+
+```
+recipe/provia: render moved by 0.0798 (> 0.0059).
+mean [0.49467, 0.49019, 0.49006] vs [0.51646, 0.51256, 0.51244].
+```
+
+The test cannot know whether you meant it. If you did, record the new output
+as the expectation — the file is hundreds of numbers, so it is not something
+you edit by hand:
+
+```bash
+PHOTOPIPE_UPDATE_GOLDEN=1 pytest tests/test_regression.py
+```
+
+**Then read the diff.** That is where the value is: `git diff
+tests/golden/render.json` tells you exactly what your change did to every
+look. Changing `saturation` in `provia` touches that one recipe and leaves
+the other four and all ten primitives untouched in the diff; changing
+something in `imageops` moves all of them at once, and you see it before you
+commit rather than months later on real photographs.
+
+So never re-bless reflexively. Look at *why* it failed first — if you did not
+expect the change, you have just caught a bug, which is what happened twice
+here already.
