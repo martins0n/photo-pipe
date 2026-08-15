@@ -119,6 +119,12 @@ def apply_recipe(linear_rgb, recipe, seed=0):
         if pts:
             img[:, :, idx] = ops.apply_curve(img[:, :, idx], pts)
 
+    # Lens falloff difference, fitted where it is applied: after the tone
+    # curves, before colour.
+    vig = r.get("vignette")
+    if vig:
+        img = ops.vignette(img, float(vig.get("a1", 0.0)), float(vig.get("a2", 0.0)))
+
     # --- colour ---
     img = ops.apply_hsl(img, r.get("hsl") or {})
 

@@ -298,6 +298,24 @@ def monochrome(img, mix=(0.30, 0.59, 0.11), filter_strength=1.0):
     return np.repeat(np.clip(grey, 0.0, 1.0)[:, :, None], 3, axis=2).astype(np.float32)
 
 
+def vignette(img, a1=0.0, a2=0.0):
+    """Radial gain: 1 + a1*r^2 + a2*r^4, with r=1 at the frame corner.
+
+    Needed when reproducing a camera's rendering, because the raw developer
+    and the camera rarely agree on how much lens falloff to remove — DxO
+    strips more of it than the A6700 does, which shows up as a systematic
+    edge-versus-centre brightness difference (measured at +5.3 L) that no
+    global tone curve can express.
+    """
+    if a1 == 0.0 and a2 == 0.0:
+        return img
+    h, w = img.shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    r2 = (((yy - h / 2) / (h / 2)) ** 2 + ((xx - w / 2) / (w / 2)) ** 2) / 2.0
+    gain = (1.0 + a1 * r2 + a2 * r2 * r2)[:, :, None]
+    return np.clip(img * gain, 0.0, 1.0).astype(np.float32)
+
+
 def grain(img, amount=0.0, size=1.0, seed=0):
     """Luminance grain, strongest in the midtones like real film."""
     if amount == 0.0:

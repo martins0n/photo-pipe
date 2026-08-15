@@ -122,3 +122,18 @@ def test_zero_amount_is_a_noop(fn, kwargs):
     rng = np.random.default_rng(1)
     img = rng.random((16, 16, 3)).astype(np.float32)
     assert np.allclose(fn(img, **kwargs), img)
+
+
+# --- vignette --------------------------------------------------------------
+
+def test_vignette_zero_is_a_noop():
+    rng = np.random.default_rng(3)
+    img = rng.random((32, 48, 3)).astype(np.float32)
+    assert np.allclose(ops.vignette(img, 0.0, 0.0), img)
+
+
+def test_vignette_leaves_the_centre_alone_and_moves_the_corners():
+    img = np.full((64, 64, 3), 0.5, dtype=np.float32)
+    out = ops.vignette(img, -0.2, 0.0)
+    assert out[32, 32, 0] == pytest.approx(0.5, abs=0.01)   # centre
+    assert out[0, 0, 0] < 0.5 - 0.01                        # corner darkened

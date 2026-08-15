@@ -37,10 +37,11 @@ rgb_curves:
   - [0.72, 0.8695]
   - [0.88, 0.9112]
   - [1.0, 0.95]
+vignette: {a1: 0.0887, a2: -0.3253}
 hsl:
   red: {lum: 20}
-  orange: {sat: -5, lum: 6}
-  yellow: {sat: -27, lum: -10}
+  orange: {sat: -5, lum: 7}
+  yellow: {sat: -27, lum: -9}
   green: {sat: -12}
-  blue: {sat: -6, lum: -6}
-  magenta: {sat: -7, lum: 36}
+  blue: {sat: -6, lum: -5}
+  magenta: {sat: -7, lum: 38}

@@ -111,11 +111,52 @@ def _apply_rgb_curves(img, curves):
     return out
 
 
-def measure_hsl(pairs, curves, min_pixels=2000):
+def measure_vignette(pairs, curves, bins=24):
+    """Fit the residual radial brightness difference left by the curves.
+
+    Least squares of (ratio - 1) on r^2 and r^4, where ratio is the camera's
+    luminance over ours, binned by radius. Fitted after the curves because
+    that is where it is applied, which keeps the fit self-consistent.
+    """
+    num = np.zeros(bins); den = np.zeros(bins)
+    for neutral, target in pairs:
+        got = _apply_rgb_curves(neutral, curves)
+        lg = ops.luminance(got); lt = ops.luminance(target)
+        h, w = lg.shape
+        yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+        r2 = (((yy - h / 2) / (h / 2)) ** 2 + ((xx - w / 2) / (w / 2)) ** 2) / 2.0
+        # Mid-tones only: near black the ratio explodes, near white it clips.
+        m = (lg > 0.12) & (lg < 0.88) & (lt > 0.12) & (lt < 0.88)
+        if m.sum() < 500:
+            continue
+        idx = np.clip((r2[m] * bins).astype(np.int32), 0, bins - 1)
+        ratio = lt[m] / np.maximum(lg[m], 1e-4)
+        np.add.at(num, idx, ratio)
+        np.add.at(den, idx, 1.0)
+
+    ok = den > 200
+    if ok.sum() < 6:
+        return {}
+    x = (np.arange(bins)[ok] + 0.5) / bins
+    y = num[ok] / den[ok] - 1.0
+    A = np.stack([x, x * x], axis=1)
+    try:
+        a1, a2 = np.linalg.lstsq(A, y, rcond=None)[0]
+    except np.linalg.LinAlgError:
+        return {}
+    if abs(a1) < 0.01 and abs(a2) < 0.01:
+        return {}
+    return {"a1": round(float(np.clip(a1, -0.6, 0.6)), 4),
+            "a2": round(float(np.clip(a2, -0.6, 0.6)), 4)}
+
+
+def measure_hsl(pairs, curves, min_pixels=2000, vignette=None):
     """Per-hue saturation/luminance residual left over after the curves."""
     sums = {b: [0.0, 0.0, 0.0] for b in _BANDS}   # sat ratio, lum ratio, weight
     for neutral, target in pairs:
         got = _apply_rgb_curves(neutral, curves)
+        if vignette:
+            got = ops.vignette(got, vignette.get("a1", 0.0), vignette.get("a2", 0.0))
         g = cv2.cvtColor(np.clip(got, 0, 1), cv2.COLOR_RGB2HSV)
         t = cv2.cvtColor(np.clip(target, 0, 1), cv2.COLOR_RGB2HSV)
         for band in _BANDS:
@@ -148,11 +189,13 @@ def measure_hsl(pairs, curves, min_pixels=2000):
     return hsl
 
 
-def error(pairs, curves, hsl=None):
+def error(pairs, curves, hsl=None, vignette=None):
     """Mean Lab error of the measured look against the camera."""
     total = 0.0
     for neutral, target in pairs:
         got = _apply_rgb_curves(neutral, curves)
+        if vignette:
+            got = ops.vignette(got, vignette.get("a1", 0.0), vignette.get("a2", 0.0))
         if hsl:
             got = ops.apply_hsl(got, hsl)
         d = (cv2.cvtColor(np.clip(got, 0, 1), cv2.COLOR_RGB2LAB)
@@ -161,7 +204,7 @@ def error(pairs, curves, hsl=None):
     return total / max(len(pairs), 1)
 
 
-def to_recipe(curves, hsl, name, description, order=50, exposure=0.0):
+def to_recipe(curves, hsl, name, description, order=50, exposure=0.0, vignette=None):
     """Assemble the measured pieces into a recipe dict ready to dump as YAML."""
     data = {
         "name": name,
@@ -171,6 +214,8 @@ def to_recipe(curves, hsl, name, description, order=50, exposure=0.0):
     if abs(exposure) >= 0.02:
         data["exposure"] = round(float(exposure), 3)
     data["rgb_curves"] = {k: v for k, v in curves.items()}
+    if vignette:
+        data["vignette"] = vignette
     if hsl:
         data["hsl"] = hsl
     return data
