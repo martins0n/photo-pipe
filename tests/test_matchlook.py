@@ -105,3 +105,36 @@ def test_identical_pair_needs_no_matrix():
     img = scene(9)
     flat = {c: [[0.0, 0.0], [1.0, 1.0]] for c in ("red", "green", "blue")}
     assert matchlook.measure_matrix([(img, img)], flat) is None
+
+
+def test_detail_ratio_falls_when_an_image_is_blurred():
+    import cv2
+    img = scene(11)
+    g = cv2.cvtColor(np.clip(img, 0, 1), cv2.COLOR_RGB2GRAY) * 255
+    soft = cv2.GaussianBlur(g, (0, 0), 1.2)
+    assert matchlook._detail_ratio(soft) < matchlook._detail_ratio(g)
+
+
+def test_measure_sharpen_recovers_lost_detail():
+    """A softened render must be given sharpening back, not left alone."""
+    from photopipe import imageops as ops
+    import cv2
+    rng = np.random.default_rng(3)
+    target = np.clip(rng.random((256, 256, 3)).astype(np.float32) * 0.6 + 0.2, 0, 1)
+    soft = cv2.GaussianBlur(target, (0, 0), 0.9)
+    flat = {c: [[0.0, 0.0], [1.0, 1.0]] for c in ("red", "green", "blue")}
+
+    got = matchlook.measure_sharpen([(soft, target)], flat)
+    assert got is not None and got["amount"] > 0.05
+    # and it must actually close the gap
+    before = matchlook._detail_ratio(ops.luminance(soft) * 255)
+    after = matchlook._detail_ratio(ops.luminance(
+        ops.sharpen(soft, **{k: got[k] for k in ("amount", "radius", "threshold")})) * 255)
+    assert after > before
+
+
+def test_measure_sharpen_is_skipped_when_already_crisp():
+    """No sharpening term when the render already matches — do not oversharpen."""
+    img = scene(12)
+    flat = {c: [[0.0, 0.0], [1.0, 1.0]] for c in ("red", "green", "blue")}
+    assert matchlook.measure_sharpen([(img, img)], flat) is None

@@ -80,3 +80,19 @@ def test_curve_points_accept_both_spellings(scene):
     as_pairs = R.Recipe({"curve": [[0, 0], [0.5, 0.6], [1, 1]]})
     as_dicts = R.Recipe({"curve": [{"x": 0, "y": 0}, {"x": 0.5, "y": 0.6}, {"x": 1, "y": 1}]})
     assert np.allclose(R.apply_recipe(scene, as_pairs), R.apply_recipe(scene, as_dicts))
+
+
+def test_jpeg_export_is_444_with_an_icc_profile(tmp_path):
+    """Exports went out 4:2:0 for a while because a cv2 flag was requested
+    conditionally and silently dropped on older builds."""
+    from PIL import Image, JpegImagePlugin
+    from photopipe import develop
+    rng = np.random.default_rng(2)
+    img = rng.random((64, 96, 3)).astype(np.float32)
+    path = str(tmp_path / "out.jpg")
+    develop.save_jpeg(img, path, quality=97)
+
+    im = Image.open(path)
+    assert JpegImagePlugin.get_sampling(im) == 0, "chroma is subsampled"
+    assert im.info.get("icc_profile"), "no colour profile embedded"
+    assert im.size == (96, 64)

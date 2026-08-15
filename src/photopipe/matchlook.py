@@ -150,6 +150,73 @@ def measure_vignette(pairs, curves, bins=24):
             "a2": round(float(np.clip(a2, -0.6, 0.6)), 4)}
 
 
+def _detail_ratio(gray, crop=1024):
+    """High-frequency energy relative to mid-frequency, on a centre crop.
+
+    A scale-free measure of how much fine detail a rendering carries: taking
+    the ratio cancels out scene content, so two renderings of the same frame
+    are comparable even though their absolute spectra are not.
+    """
+    h, w = gray.shape
+    n = min(crop, h, w)
+    y, x = (h - n) // 2, (w - n) // 2
+    g = gray[y:y + n, x:x + n].astype(np.float64)
+    g = g - g.mean()
+    g *= np.outer(np.hanning(n), np.hanning(n))
+    power = np.abs(np.fft.fftshift(np.fft.fft2(g))) ** 2
+    yy, xx = np.mgrid[0:n, 0:n]
+    r = np.hypot(yy - n // 2, xx - n // 2) / (n / 2)      # 1.0 == Nyquist
+    mid = power[(r >= 0.25) & (r <= 0.35)].mean()
+    hi = power[(r >= 0.75) & (r <= 0.90)].mean()
+    return float(hi / mid) if mid > 0 else 0.0
+
+
+def measure_sharpen(pairs, curves, vignette=None, matrix=None,
+                    radius=0.8, threshold=1.0, max_amount=1.5):
+    """Find the sharpening amount that matches the camera's detail rendering.
+
+    Capture sharpening is the one part of a camera look that is spatial rather
+    than tonal, so none of the other terms can express it — a measured recipe
+    without this renders visibly softer than the JPEG it was measured from,
+    because the raw arrives unsharpened and nothing puts the detail back.
+
+    Solved by bisection on the ratio above rather than copied from a
+    hand-written recipe: the point of a measured look is to land on the
+    camera, and a borrowed constant overshoots it.
+    """
+    lum = lambda img: (ops.luminance(np.clip(img, 0, 1)) * 255.0)
+    targets, bases = [], []
+    for neutral, target in pairs:
+        bases.append(_staged(neutral, curves, vignette, matrix))
+        targets.append(_detail_ratio(lum(target)))
+    if not bases:
+        return None
+    want = float(np.median(targets))
+
+    def ratio_at(amount):
+        return float(np.median([
+            _detail_ratio(lum(ops.sharpen(b, amount=amount, radius=radius,
+                                          threshold=threshold)))
+            for b in bases]))
+
+    if ratio_at(0.0) >= want:      # already as crisp as the camera
+        return None
+
+    lo, hi = 0.0, max_amount
+    if ratio_at(hi) < want:        # cannot reach it; take the most we allow
+        return {"amount": round(hi, 3), "radius": radius, "threshold": threshold}
+    for _ in range(12):
+        mid = (lo + hi) / 2
+        if ratio_at(mid) < want:
+            lo = mid
+        else:
+            hi = mid
+    amount = (lo + hi) / 2
+    if amount < 0.02:
+        return None
+    return {"amount": round(amount, 3), "radius": radius, "threshold": threshold}
+
+
 def _staged(neutral, curves, vignette=None, matrix=None):
     """Our rendering up to the point a given term is fitted."""
     got = _apply_rgb_curves(neutral, curves)
@@ -267,7 +334,7 @@ def error(pairs, curves, hsl=None, vignette=None, matrix=None):
 
 
 def to_recipe(curves, hsl, name, description, order=50, exposure=0.0,
-              vignette=None, matrix=None):
+              vignette=None, matrix=None, sharpen=None):
     """Assemble the measured pieces into a recipe dict ready to dump as YAML."""
     data = {
         "name": name,
@@ -283,4 +350,6 @@ def to_recipe(curves, hsl, name, description, order=50, exposure=0.0,
         data["matrix"] = matrix
     if hsl:
         data["hsl"] = hsl
+    if sharpen:
+        data["sharpen"] = sharpen
     return data

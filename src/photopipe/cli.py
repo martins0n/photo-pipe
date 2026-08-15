@@ -208,7 +208,7 @@ def cmd_match_look(args):
 
     raws = collect_raws(args.inputs)
     work = os.path.abspath(args.work)
-    pairs, gains = [], []
+    pairs, gains, sharp_pairs = [], [], []
 
     for src in raws[:args.limit]:
         sib = develop.find_sibling_rendered(src)
@@ -227,6 +227,21 @@ def cmd_match_look(args):
         neutral, gain = matchlook.neutral_render(base, sooc)
         pairs.append((neutral, sooc))
         gains.append(gain)
+
+        # Detail has to be measured at native resolution. The pairs above are
+        # downscaled for speed, which is fine for tone and colour but fatal
+        # here: resampling low-passes both sides equally, so a render that is
+        # visibly softer at 1:1 measures as identical on a 900px proxy.
+        if len(sharp_pairs) < args.sharpen_frames:
+            full = develop.develop(source)
+            ref_full = develop.load_rendered(
+                sib, cache_dir=os.path.join(work, "02_sooc"))
+            if ref_full.shape == full.shape:
+                k = lambda x: float(np.exp(np.mean(
+                    np.log(develop.ops.luminance(x) + 1e-4))))
+                full = full * (k(develop.ops.srgb_to_linear(ref_full))
+                               / max(k(full), 1e-9))
+                sharp_pairs.append((develop.ops.linear_to_srgb(full), ref_full))
         print(f"  {stem}")
 
     if not pairs:
@@ -263,6 +278,14 @@ def cmd_match_look(args):
         print("  hsl residual made it worse — dropping it")
         hsl, err_full = {}, err_mat
 
+    sharp = (None if args.no_sharpen or not sharp_pairs else
+             matchlook.measure_sharpen(sharp_pairs, curves, vig, mat))
+    if sharp:
+        print(f"  sharpen    amount={sharp['amount']} "
+              f"(matched to the camera's detail rendering)")
+    else:
+        print("  sharpen    not needed — already as crisp as the camera")
+
     slug = args.name or look.lower().replace(" ", "-")
     data = matchlook.to_recipe(
         curves, hsl, name=args.title or f"{look} (measured)",
@@ -271,8 +294,10 @@ def cmd_match_look(args):
                      + (", lens falloff" if vig else "")
                      + (", a 3x3 channel mix" if mat else "")
                      + (", per-hue residual" if hsl else "")
+                     + (", capture sharpening" if sharp else "")
                      + ". Regenerate with `photo-pipe match-look`."),
-        order=args.order, exposure=exposure, vignette=vig, matrix=mat)
+        order=args.order, exposure=exposure, vignette=vig, matrix=mat,
+        sharpen=sharp)
 
     dest = args.out_recipe or os.path.join(recipes_mod.default_recipe_dir(), f"{slug}.yaml")
     os.makedirs(os.path.dirname(os.path.abspath(dest)), exist_ok=True)
@@ -463,6 +488,10 @@ def main():
                        help="match the base the recipe will be used on (default dxo)")
     match.add_argument("--fit-size", type=int, default=900)
     match.add_argument("--limit", type=int, default=12, help="max frames to measure")
+    match.add_argument("--sharpen-frames", type=int, default=3,
+                       help="frames decoded at full resolution to match detail")
+    match.add_argument("--no-sharpen", action="store_true",
+                       help="skip matching the camera's capture sharpening")
     match.add_argument("--no-matrix", action="store_true",
                        help="skip the 3x3 channel-mix term")
     match.add_argument("--no-vignette", action="store_true",

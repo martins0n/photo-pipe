@@ -11,6 +11,7 @@ import json
 import numpy as np
 import cv2
 import rawpy
+from PIL import Image
 
 from . import imageops as ops
 
@@ -39,6 +40,25 @@ def develop(path, max_dim=None, half_size=False, **exposure_kw):
     if max_dim:
         img = resize_max(img, max_dim)
     return ops.auto_exposure(img, **exposure_kw)
+
+
+_ICC_CACHE = []
+
+
+def _srgb_icc():
+    """An sRGB profile to embed, or None if Pillow was built without LittleCMS.
+
+    The EXIF ColorSpace tag alone leaves it to the viewer to assume sRGB;
+    an actual profile removes the assumption.
+    """
+    if not _ICC_CACHE:
+        try:
+            from PIL import ImageCms
+            _ICC_CACHE.append(ImageCms.ImageCmsProfile(
+                ImageCms.createProfile("sRGB")).tobytes())
+        except Exception:
+            _ICC_CACHE.append(None)
+    return _ICC_CACHE[0]
 
 
 SIBLING_EXT = (".HIF", ".HEIC", ".HEIF", ".JPG", ".JPEG")
@@ -95,13 +115,16 @@ def save_jpeg(img_float, path, quality=97, exif_from=None):
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     height, width = img_float.shape[:2]
     img8 = np.clip(img_float * 255.0 + 0.5, 0, 255).astype(np.uint8)
-    params = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
-    # 4:4:4 chroma keeps saturated edges clean, but the flag is missing on
-    # older OpenCV builds (absent in 4.6), so only ask for it when it exists.
-    if hasattr(cv2, "IMWRITE_JPEG_SAMPLING_FACTOR"):
-        params += [int(cv2.IMWRITE_JPEG_SAMPLING_FACTOR),
-                   int(cv2.IMWRITE_JPEG_SAMPLING_FACTOR_444)]
-    cv2.imwrite(path, cv2.cvtColor(img8, cv2.COLOR_RGB2BGR), params)
+
+    # Written through Pillow rather than cv2. cv2's 4:4:4 flag only exists on
+    # newer builds, and asking for it conditionally meant every export on an
+    # older OpenCV silently came out 4:2:0 — half-resolution chroma, visible on
+    # saturated edges, with nothing in the output to say so. Pillow supports
+    # `subsampling` unconditionally and can embed the sRGB profile at the same
+    # time, so the guesswork disappears instead of being version-dependent.
+    Image.fromarray(img8).save(
+        path, format="JPEG", quality=quality, subsampling=0,
+        optimize=True, icc_profile=_srgb_icc())
     if exif_from:
         try:
             subprocess.run(

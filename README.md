@@ -242,6 +242,16 @@ if it actually lowers the error:
 | `vignette` | the lens-falloff difference between the raw developer and the camera |
 | `matrix` | a 3×3 channel mix — what a per-channel curve structurally cannot do, since a curve maps R from R alone and can never trade between channels |
 | `hsl` | whatever is left that is genuinely hue-specific |
+| `sharpen` | capture sharpening, matched to the camera's detail rendering |
+
+`sharpen` is the odd one out: it is spatial rather than tonal, so no other
+term can express it, and a raw arrives with none of it. Left out, a measured
+look renders visibly softer at 1:1 than the JPEG it was measured from. The
+amount is solved by bisection against a high-to-mid frequency ratio, not
+copied from a hand-written recipe — the point of a measured look is to land
+on the camera. It must be measured at **native resolution**: the downscaled
+proxies used for colour low-pass both sides equally, and a render that is
+clearly softer at 1:1 measures as identical on a 900 px copy.
 
 The matrix is the one that closes the colour gap. Its rows are constrained to
 sum to 1 so neutrals stay neutral, which also drops the fit to two free
