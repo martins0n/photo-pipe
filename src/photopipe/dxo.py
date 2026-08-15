@@ -71,6 +71,65 @@ def _settled(path, checks=2, interval=1.5):
     return os.path.getsize(path) == last and last > 0
 
 
+def cache_entries(stage_dir):
+    """PureRAW outputs in the cache, newest first, with their sizes.
+
+    Only the DNGs are counted: the staged sources are hardlinks to your
+    originals, so they occupy no extra space.
+    """
+    if not os.path.isdir(stage_dir):
+        return []
+    out = []
+    for f in os.listdir(stage_dir):
+        if "-DxO_" in f and f.lower().endswith((".dng", ".tif", ".tiff", ".jpg")):
+            p = os.path.join(stage_dir, f)
+            try:
+                out.append((p, os.path.getsize(p), os.path.getmtime(p)))
+            except OSError:
+                pass
+    return sorted(out, key=lambda e: -e[2])
+
+
+def cache_size(stage_dir):
+    return sum(e[1] for e in cache_entries(stage_dir))
+
+
+def prune(stage_dir, max_bytes, log=print):
+    """Evict the oldest PureRAW outputs until the cache fits in max_bytes.
+
+    Re-running a look on a recent shoot is the common case, so age is the
+    right thing to evict on. Anything removed simply costs one more PureRAW
+    pass if you come back to it.
+    """
+    entries = cache_entries(stage_dir)
+    total = sum(e[1] for e in entries)
+    if max_bytes <= 0 or total <= max_bytes:
+        return 0, 0
+
+    freed = removed = 0
+    for path, size, _ in reversed(entries):     # oldest first
+        if total - freed <= max_bytes:
+            break
+        # Drop the staged hardlink too, so a later run re-stages and reprocesses
+        # rather than finding a source with no output beside it.
+        stem = os.path.basename(path).split("-DxO_")[0]
+        try:
+            os.remove(path)
+            freed += size
+            removed += 1
+        except OSError:
+            continue
+        for f in os.listdir(stage_dir):
+            if os.path.splitext(f)[0] == stem:
+                try:
+                    os.remove(os.path.join(stage_dir, f))
+                except OSError:
+                    pass
+    if removed:
+        log(f"    cache: freed {freed / 2**30:.1f} GB ({removed} file(s), oldest first)")
+    return freed, removed
+
+
 def process(raw_paths, stage_dir, mode=MODE_LAST_SETTINGS, timeout=1800, log=print):
     """Run a batch through PureRAW. Returns {source_path: output_dng_path}.
 

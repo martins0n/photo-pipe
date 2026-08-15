@@ -23,7 +23,13 @@ photo-pipe run ~/Images/2026-08-14 --collage        # the whole shoot, all 5 loo
 photo-pipe run ~/Images/2026-08-14 --recipes velvia,acros --preview
 photo-pipe run photo.ARW --denoise none             # A/B: skip DxO entirely
 photo-pipe fit-camera ~/Images/2026-07-30           # camera settings for a look
+photo-pipe match-look ~/Images/2026-08-15 --name fl # camera's look -> a recipe
+photo-pipe cache --max-gb 5                         # trim the PureRAW cache
 ```
+
+The two directions are worth keeping straight: **`match-look`** copies the
+camera's rendering *into* a recipe, **`fit-camera`** works out which camera
+sliders approximate a recipe you already have.
 
 As a library:
 
@@ -39,6 +45,23 @@ develop.save_jpeg(out, "out.jpg", exif_from="DSC0001.ARW")
 Your originals are only ever read. Raws are hardlinked into a cache outside
 your photo library (`~/.cache/photo-pipe`, override with `PHOTOPIPE_WORK` or
 `--work`), PureRAW writes there, and exports land in `--out` (default `./out`).
+
+### The cache will eat disk if you let it
+
+PureRAW's DNGs are ~85 MB each, so one 80-frame shoot is close to 7 GB. After
+every run the cache is trimmed back to **10 GB**, oldest first — re-running a
+look on a recent shoot is the common case, and anything evicted just costs one
+more PureRAW pass. Tune with `--cache-gb`, `PHOTOPIPE_CACHE_GB`, or `0` to
+disable. Inspect and trim by hand with:
+
+```bash
+photo-pipe cache                 # size, count, age range
+photo-pipe cache --max-gb 5      # evict oldest until under 5 GB
+photo-pipe cache --clear
+```
+
+Staged raws are hardlinks to your originals, so they cost no extra space —
+only the DNGs count.
 
 ---
 
@@ -171,6 +194,84 @@ Notes that matter when dialling numbers in:
 | `astia` | Softer contrast, warm and forgiving on skin. |
 | `classic-chrome` | Muted documentary: lifted dipped blacks, reds to brick, greens to olive. |
 | `acros` | B&W, panchromatic response, strong micro-contrast, fine grain. |
+
+## Examples
+
+Five looks across one shoot, with the camera's own JPEG as the leftmost
+reference column — this is what `--collage` produces:
+
+![five looks](docs/examples/daylight.jpg)
+
+The same sheet on a night shoot: [docs/examples/five-looks.jpg](docs/examples/five-looks.jpg)
+
+---
+
+## Copying a look off the camera (`match-look`)
+
+The camera's own rendering is often the thing you actually want — its sky, its
+skin tones — and you already have it: every RAW+HEIF pair is a before/after of
+the look you're trying to describe. `match-look` measures it and writes it out
+as a recipe.
+
+```bash
+photo-pipe match-look ~/Images/2026-08-15 --name fl
+```
+
+![measured FL](docs/examples/fl-measured.jpg)
+
+*Left: Sony's FL Creative Look. Middle: the measured `fl` recipe. Right:
+Classic Chrome, for contrast — note how it pushes the sky toward lavender
+while `fl` keeps the camera's blue.*
+
+### How it works
+
+For each frame it develops the raw to a neutral rendering, then measures where
+every input level actually lands in the camera's output. Binned medians across
+many frames give a **transfer curve per channel**, which captures tone and
+colour balance in one go. A residual pass in HSL picks up what per-channel
+curves structurally cannot — hue-dependent saturation, like muted foliage
+beside an untouched sky.
+
+The output is an ordinary recipe you can open and edit:
+
+```yaml
+name: FL (measured)
+exposure: -0.852
+rgb_curves:
+  red:   [[0.0, 0.0011], [0.04, 0.0114], ...]
+  green: [[0.0, 0.0040], [0.04, 0.0143], ...]
+  blue:  [[0.0, 0.0019], [0.04, 0.0113], ...]
+hsl:
+  yellow: {sat: -27, lum: -10}
+  green:  {sat: -12}
+```
+
+### Two things that decide whether the result is any good
+
+**Exposure has to be carried into the recipe.** The measurement aligns
+exposure so it doesn't leak into the curves as a fake bend — but the pipeline's
+auto-exposure deliberately runs brighter than the camera's metering (here, by
+0.85 stops). A recipe that ignores that feeds the curves inputs shifted up from
+where they were measured, which lands the sky high on the curve and
+desaturates it: the hue comes out right and the colour does not. So the median
+gain is written back as `exposure:`. Measured on the sky patch, that one line
+moved saturation from 0.19 to 0.33 against the camera's 0.47.
+
+**Per-channel curves cannot express everything.** They are a 1-D transform per
+channel; Sony's colour science is not. Expect the hue to land close (206° vs
+the camera's 199°, where a hand-written Classic Chrome sits at 219°) and
+saturation to still drift a few points scene to scene. `match-look` prints the
+Lab error at each stage so you can see what you actually got:
+
+```
+Lab error  neutral 9.10  ->  curves 6.15  ->  +hsl 5.79
+```
+
+If the HSL pass makes things worse it is dropped automatically.
+
+Useful flags: `--limit N` (frames to measure, default 12), `--no-hsl` for
+curves only, `--denoise none` to measure against a LibRaw base instead of DxO
+— measure against whichever base you will actually render on.
 
 ## Getting a look in-camera
 

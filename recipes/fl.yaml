@@ -1,0 +1,46 @@
+name: FL (measured)
+description: Sony FL Creative Look, measured from 8 RAW+HEIF pairs. Per-channel transfer curves reproduce
+  the camera's tone and colour; regenerate with `photo-pipe match-look`.
+order: 50
+exposure: -0.852
+rgb_curves:
+  red:
+  - [0.0, 0.0011]
+  - [0.04, 0.0114]
+  - [0.1, 0.0494]
+  - [0.18, 0.1375]
+  - [0.28, 0.3048]
+  - [0.4, 0.5166]
+  - [0.55, 0.7323]
+  - [0.72, 0.8541]
+  - [0.88, 0.9088]
+  - [1.0, 0.9481]
+  green:
+  - [0.0, 0.004]
+  - [0.04, 0.0143]
+  - [0.1, 0.0525]
+  - [0.18, 0.1512]
+  - [0.28, 0.3206]
+  - [0.4, 0.5748]
+  - [0.55, 0.7615]
+  - [0.72, 0.8785]
+  - [0.88, 0.9168]
+  - [1.0, 0.9604]
+  blue:
+  - [0.0, 0.0019]
+  - [0.04, 0.0113]
+  - [0.1, 0.0543]
+  - [0.18, 0.1401]
+  - [0.28, 0.314]
+  - [0.4, 0.5457]
+  - [0.55, 0.746]
+  - [0.72, 0.8695]
+  - [0.88, 0.9112]
+  - [1.0, 0.95]
+hsl:
+  red: {lum: 20}
+  orange: {sat: -5, lum: 6}
+  yellow: {sat: -27, lum: -10}
+  green: {sat: -12}
+  blue: {sat: -6, lum: -6}
+  magenta: {sat: -7, lum: 36}

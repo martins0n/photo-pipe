@@ -137,7 +137,112 @@ def cmd_run(args):
             row_sublabels=row_subs)
         print(f"      {sheet}")
 
+    if args.denoise == "dxo" and args.cache_gb > 0:
+        dxo.prune(stage_dir, int(args.cache_gb * 2 ** 30), log=print)
+
     print(f"\ndone in {time.time() - t0:.0f}s -> {out_dir}")
+
+
+def cmd_cache(args):
+    """Inspect or trim the PureRAW cache."""
+    stage = os.path.join(os.path.abspath(args.work), "01_dxo")
+    entries = dxo.cache_entries(stage)
+    total = sum(e[1] for e in entries)
+    print(f"cache : {stage}")
+    print(f"size  : {total / 2**30:.2f} GB in {len(entries)} PureRAW output(s)")
+    if entries:
+        newest = time.strftime("%Y-%m-%d %H:%M", time.localtime(entries[0][2]))
+        oldest = time.strftime("%Y-%m-%d %H:%M", time.localtime(entries[-1][2]))
+        print(f"range : {oldest}  ..  {newest}")
+        print("        (staged raws are hardlinks and cost no extra space)")
+
+    if args.clear:
+        # prune() treats max_bytes<=0 as "no cap", so clearing is its own loop.
+        freed = removed = 0
+        for path, size, _ in entries:
+            stem = os.path.basename(path).split("-DxO_")[0]
+            try:
+                os.remove(path); freed += size; removed += 1
+            except OSError:
+                continue
+            for f in os.listdir(stage):
+                if os.path.splitext(f)[0] == stem:
+                    try:
+                        os.remove(os.path.join(stage, f))
+                    except OSError:
+                        pass
+        print(f"\ncleared {freed / 2**30:.2f} GB ({removed} file(s))")
+    elif args.max_gb is not None:
+        freed, removed = dxo.prune(stage, int(args.max_gb * 2**30), log=print)
+        if not removed:
+            print(f"\nalready under {args.max_gb} GB — nothing removed")
+
+
+def cmd_match_look(args):
+    """Measure the camera's own rendering and write it out as a recipe."""
+    import yaml
+    from . import matchlook
+
+    raws = collect_raws(args.inputs)
+    work = os.path.abspath(args.work)
+    pairs, gains = [], []
+
+    for src in raws[:args.limit]:
+        sib = develop.find_sibling_rendered(src)
+        if not sib:
+            continue
+        stem = os.path.splitext(os.path.basename(src))[0]
+        source = src
+        if args.denoise == "dxo":
+            source = dxo.process([src], os.path.join(work, "01_dxo"), log=lambda *a: None)[src]
+        base = develop.develop(source, max_dim=args.fit_size)
+        sooc = develop.load_rendered(sib, max_dim=args.fit_size,
+                                     cache_dir=os.path.join(work, "02_sooc"))
+        if sooc.shape != base.shape:
+            print(f"  {stem}: skipped (size mismatch)")
+            continue
+        neutral, gain = matchlook.neutral_render(base, sooc)
+        pairs.append((neutral, sooc))
+        gains.append(gain)
+        print(f"  {stem}")
+
+    if not pairs:
+        raise SystemExit("no RAW + HIF/JPEG pairs to measure")
+
+    look = develop.read_look_settings(develop.find_sibling_rendered(raws[0])).get(
+        "CreativeStyleName", "camera")
+    print(f"\nmeasuring '{look}' from {len(pairs)} frame(s)")
+
+    import math
+    exposure = math.log2(float(np.median(gains))) if gains else 0.0
+    print(f"  exposure offset vs the pipeline's auto-exposure: {exposure:+.2f} stops")
+
+    curves = matchlook.measure_curves(pairs)
+    err_curves = matchlook.error(pairs, curves)
+    hsl = {} if args.no_hsl else matchlook.measure_hsl(pairs, curves)
+    err_full = matchlook.error(pairs, curves, hsl) if hsl else err_curves
+
+    baseline = matchlook.error(pairs, {c: [[0, 0], [1, 1]] for c in ("red", "green", "blue")})
+    print(f"  Lab error  neutral {baseline:6.2f}  ->  curves {err_curves:6.2f}"
+          + (f"  ->  +hsl {err_full:6.2f}" if hsl else ""))
+    if hsl and err_full > err_curves:
+        print("  hsl residual made it worse — dropping it")
+        hsl, err_full = {}, err_curves
+
+    slug = args.name or look.lower().replace(" ", "-")
+    data = matchlook.to_recipe(
+        curves, hsl, name=args.title or f"{look} (measured)",
+        description=(f"Sony {look} Creative Look, measured from {len(pairs)} "
+                     f"RAW+HEIF pairs. Per-channel transfer curves reproduce the "
+                     f"camera's tone and colour; regenerate with `photo-pipe match-look`."),
+        order=args.order, exposure=exposure)
+
+    dest = args.out_recipe or os.path.join(recipes_mod.default_recipe_dir(), f"{slug}.yaml")
+    os.makedirs(os.path.dirname(os.path.abspath(dest)), exist_ok=True)
+    with open(dest, "w") as fh:
+        yaml.safe_dump(data, fh, sort_keys=False, default_flow_style=None, width=100)
+    print(f"\nwrote {dest}")
+    print(f"  use it:  photo-pipe run <photos> --recipes {slug}")
 
 
 def cmd_fit_camera(args):
@@ -257,6 +362,10 @@ def main():
     run.add_argument("--out", default=os.path.join(here, "out"))
     run.add_argument("--work", default=default_work_dir(),
                      help="DxO cache dir (default: ~/.cache/photo-pipe)")
+    run.add_argument("--cache-gb", type=float,
+                     default=float(os.environ.get("PHOTOPIPE_CACHE_GB", 10)),
+                     help="cap the PureRAW cache after a run, oldest evicted "
+                          "first; 0 disables (default 10 GB, PHOTOPIPE_CACHE_GB)")
     run.add_argument("--max-dim", type=int, default=None,
                      help="downscale exports to this long edge (default: full resolution)")
     run.add_argument("--preview", action="store_true",
@@ -297,6 +406,28 @@ def main():
     fit.add_argument("--lift", type=float, default=0.25)
     fit.add_argument("--tile", type=int, default=900)
     fit.set_defaults(func=cmd_fit_camera)
+
+    cache = sub.add_parser("cache", help="show or trim the PureRAW cache")
+    cache.add_argument("--work", default=default_work_dir())
+    cache.add_argument("--max-gb", type=float, help="evict oldest until under this size")
+    cache.add_argument("--clear", action="store_true", help="remove everything")
+    cache.set_defaults(func=cmd_cache)
+
+    match = sub.add_parser("match-look",
+                           help="measure the camera's own look and save it as a recipe")
+    match.add_argument("inputs", nargs="+", help="raws shot RAW+HEIF")
+    match.add_argument("--name", help="recipe slug (default: the Creative Look name)")
+    match.add_argument("--title", help="display name inside the recipe")
+    match.add_argument("--out-recipe", help="where to write it")
+    match.add_argument("--denoise", choices=["dxo", "none"], default="dxo",
+                       help="match the base the recipe will be used on (default dxo)")
+    match.add_argument("--fit-size", type=int, default=900)
+    match.add_argument("--limit", type=int, default=12, help="max frames to measure")
+    match.add_argument("--no-hsl", action="store_true",
+                       help="per-channel curves only, skip the hue residual")
+    match.add_argument("--order", type=int, default=50)
+    match.add_argument("--work", default=default_work_dir())
+    match.set_defaults(func=cmd_match_look)
 
     args = ap.parse_args()
     args.func(args)
