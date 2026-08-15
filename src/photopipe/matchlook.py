@@ -153,6 +153,9 @@ def measure_vignette(pairs, curves, bins=24):
 def measure_hsl(pairs, curves, min_pixels=2000, vignette=None):
     """Per-hue saturation/luminance residual left over after the curves."""
     sums = {b: [0.0, 0.0, 0.0] for b in _BANDS}   # sat ratio, lum ratio, weight
+    # Hue is an angle, so it accumulates as a vector — averaging degrees
+    # directly breaks across the 0/360 wrap.
+    hue_vec = {b: [0.0, 0.0] for b in _BANDS}
     for neutral, target in pairs:
         got = _apply_rgb_curves(neutral, curves)
         if vignette:
@@ -173,13 +176,20 @@ def measure_hsl(pairs, curves, min_pixels=2000, vignette=None):
                 sums[band][1] += float(tv.mean() / gv.mean()) * m.sum()
             sums[band][2] += m.sum()
 
+            dh = np.deg2rad(((t[:, :, 0][m] - g[:, :, 0][m]) + 180.0) % 360.0 - 180.0)
+            hue_vec[band][0] += float(np.sin(dh).sum())
+            hue_vec[band][1] += float(np.cos(dh).sum())
+
     hsl = {}
     for band, (s, v, n) in sums.items():
         if n == 0:
             continue
         sat = (s / n - 1.0) * 100.0
         lum = (v / n - 1.0) * 100.0
+        hue = np.rad2deg(np.arctan2(hue_vec[band][0], hue_vec[band][1]))
         entry = {}
+        if abs(hue) >= 1.5:
+            entry["hue"] = int(round(float(np.clip(hue, -30, 30))))
         if abs(sat) >= 3:
             entry["sat"] = int(round(np.clip(sat, -60, 60)))
         if abs(lum) >= 3:

@@ -14,6 +14,9 @@ import rawpy
 
 from . import imageops as ops
 
+# re-exported so the CLI can reach the primitives through this module
+
+
 
 def develop(path, max_dim=None, half_size=False, **exposure_kw):
     """Decode a raw (ARW or PureRAW DNG) to scene-linear float32 RGB.

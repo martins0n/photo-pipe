@@ -94,6 +94,23 @@ def cmd_run(args):
         base = develop.develop(developed_from, max_dim=max_dim, key_weight=args.lift)
         print(f"      {base.shape[1]}x{base.shape[0]} scene-linear")
 
+        # Borrow the camera's exposure decision for this frame. Sony's
+        # multi-segment metering is not reproducible from global statistics
+        # (optimising every auto-exposure parameter still leaves 0.42 stops of
+        # per-frame spread), but when the frame was shot RAW+HEIF the answer
+        # is simply sitting next to the raw. Aligning per frame is what stops
+        # a measured look drifting: the sky rides up or down the tone curve
+        # with exposure, so a frame rendered too bright comes out desaturated
+        # and one too dark comes out oversaturated.
+        if args.match_exposure and siblings.get(src):
+            ref = develop.load_rendered(siblings[src], max_dim=640,
+                                        cache_dir=os.path.join(work, "02_sooc"))
+            key = lambda x: float(np.exp(np.mean(np.log(develop.ops.luminance(x) + 1e-4))))
+            gain = key(develop.ops.srgb_to_linear(ref)) / max(key(base), 1e-9)
+            base = (base * gain).astype(np.float32)
+            print(f"      exposure matched to {os.path.basename(siblings[src])} "
+                  f"({np.log2(gain):+.2f} stops)")
+
         meta = develop.read_exif(src)
         row = []
 
@@ -111,7 +128,13 @@ def cmd_run(args):
 
         for r in picked:
             print(f"[3/4]   {r.slug}")
-            img = recipes_mod.apply_recipe(base, r, seed=abs(hash(stem)) % (2 ** 31))
+            use = r
+            if args.match_exposure and siblings.get(src) and r.get("exposure"):
+                # Its `exposure` is the median offset from our auto-exposure to
+                # the camera's; per-frame alignment already did that job.
+                use = recipes_mod.Recipe(
+                    {k: v for k, v in r.data.items() if k != "exposure"}, r.path)
+            img = recipes_mod.apply_recipe(base, use, seed=abs(hash(stem)) % (2 ** 31))
             path = os.path.join(out_dir, f"{stem}_{r.slug}.jpg")
             develop.save_jpeg(img, path, quality=args.quality, exif_from=src)
             row.append(img)
@@ -380,6 +403,9 @@ def main():
                      help="auto-exposure bias, 0 = protect highlights only, "
                           "1 = push everything to a midtone key (default 0.25)")
     run.add_argument("--collage", action="store_true", help="also build comparison.jpg")
+    run.add_argument("--match-exposure", action="store_true",
+                     help="take each frame's exposure from its sibling HIF/JPEG "
+                          "instead of metering it ourselves (RAW+HEIF only)")
     run.add_argument("--reference", choices=["auto", "hif", "none"], default="auto",
                      help="add the camera's own HIF/JPEG as the first collage "
                           "column (auto: only when one exists)")

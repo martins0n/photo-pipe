@@ -269,9 +269,45 @@ Lab error  neutral 9.10  ->  curves 6.15  ->  +hsl 5.79
 
 If the HSL pass makes things worse it is dropped automatically.
 
-Useful flags: `--limit N` (frames to measure, default 12), `--no-hsl` for
-curves only, `--denoise none` to measure against a LibRaw base instead of DxO
-— measure against whichever base you will actually render on.
+Useful flags: `--limit N` (frames to measure, default 12), `--no-hsl` /
+`--no-vignette` to drop a term, `--denoise none` to measure against a LibRaw
+base instead of DxO — measure against whichever base you will actually render
+on.
+
+### Render a measured look with `--match-exposure`
+
+A measured recipe carries one `exposure:` value, but the camera meters every
+frame separately and Sony's multi-segment metering cannot be reproduced from
+global image statistics — optimising every auto-exposure parameter against
+real frames still leaves 0.42 stops of per-frame spread. That spread is not
+cosmetic: the sky rides up and down the tone curve with exposure, so a frame
+rendered too bright comes back desaturated and one too dark comes back
+oversaturated, and the error flips sign between frames.
+
+When the shot is RAW+HEIF the camera's own decision is sitting next to the
+raw, so take it:
+
+```bash
+photo-pipe run ~/Images/2026-08-15 --recipes fl --match-exposure
+```
+
+The recipe's own `exposure:` is skipped when this is on, since per-frame
+alignment already does that job. On a test set this pulled sky saturation
+from 0.39/0.33/0.18 (camera: 0.25/0.45/0.25 — note the sign flip) to
+0.25/0.38/0.20, and per-frame ΔE from 16.3/15.6/9.7 to 11.9/12.4/9.0.
+
+### How close does it actually get
+
+Honest ceiling, measured rather than asserted: with exposure aligned, a
+recipe fitted to a *single frame* and scored on that same frame reaches
+ΔE 5.06, against 5.27 for the recipe fitted across eight frames — and on two
+of the eight the single-frame fit is worse, i.e. overfitting. So the residual
+is the model's limit, not scene variance and not the fitting.
+
+What the model cannot express: the camera's local adaptive processing (DRO
+was Auto on every shoot here) and a full 3-D colour transform. Per-channel
+curves plus eight hue bands get the hue to within 1-2° and leave saturation
+about 20% low on deep blues.
 
 ## Getting a look in-camera
 

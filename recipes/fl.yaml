@@ -39,9 +39,10 @@ rgb_curves:
   - [1.0, 0.95]
 vignette: {a1: 0.0887, a2: -0.3253}
 hsl:
-  red: {lum: 20}
-  orange: {sat: -5, lum: 7}
-  yellow: {sat: -27, lum: -9}
-  green: {sat: -12}
-  blue: {sat: -6, lum: -5}
-  magenta: {sat: -7, lum: 38}
+  red: {hue: 7, lum: 20}
+  orange: {hue: 2, sat: -5, lum: 7}
+  yellow: {hue: 4, sat: -27, lum: -9}
+  green: {hue: 4, sat: -12}
+  aqua: {hue: -8}
+  blue: {hue: -23, sat: -6, lum: -5}
+  magenta: {hue: 30, sat: -7, lum: 38}

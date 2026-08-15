@@ -65,3 +65,20 @@ def test_to_recipe_round_trips_through_the_engine():
 def test_negligible_exposure_is_omitted():
     curves = matchlook.measure_curves([(scene(), scene())])
     assert "exposure" not in matchlook.to_recipe(curves, {}, "T", "d", exposure=0.001)
+
+
+def test_measured_hsl_recovers_a_hue_shift():
+    """The blue sky sat ~5 degrees off until hue was measured at all."""
+    import cv2
+    img = scene(4)
+    hsv = cv2.cvtColor(np.clip(img, 0, 1), cv2.COLOR_RGB2HSV)
+    hsv[:, :, 1] = np.clip(hsv[:, :, 1] + 0.35, 0, 1)     # make the hue meaningful
+    img = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
+    hsv[:, :, 0] = (hsv[:, :, 0] + 12.0) % 360.0          # rotate every hue
+    target = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
+
+    flat = {c: [[0.0, 0.0], [1.0, 1.0]] for c in ("red", "green", "blue")}
+    hsl = matchlook.measure_hsl([(img, target)], flat)
+    shifts = [v["hue"] for v in hsl.values() if "hue" in v]
+    assert shifts, "no hue shift measured at all"
+    assert np.median(shifts) > 5
