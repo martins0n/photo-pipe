@@ -137,3 +137,24 @@ def test_vignette_leaves_the_centre_alone_and_moves_the_corners():
     out = ops.vignette(img, -0.2, 0.0)
     assert out[32, 32, 0] == pytest.approx(0.5, abs=0.01)   # centre
     assert out[0, 0, 0] < 0.5 - 0.01                        # corner darkened
+
+
+# --- colour matrix ---------------------------------------------------------
+
+def test_matrix_identity_is_a_noop():
+    rng = np.random.default_rng(5)
+    img = rng.random((16, 16, 3)).astype(np.float32)
+    assert np.allclose(ops.color_matrix(img, np.eye(3)), img, atol=1e-6)
+
+
+def test_matrix_rows_are_normalised_so_grey_stays_grey():
+    """Rows summing to something other than 1 would shift exposure."""
+    out = ops.color_matrix(grey(0.5), [[2, 0, 0], [0, 2, 0], [0, 0, 2]])[0, 0]
+    assert out[0] == pytest.approx(0.5, abs=1e-5)
+    assert out[0] == pytest.approx(out[1]) == pytest.approx(out[2])
+
+
+def test_matrix_can_trade_between_channels():
+    """The thing per-channel curves cannot do."""
+    out = ops.color_matrix(px(0.8, 0.2, 0.2), [[1.3, -0.3, 0.0], [0, 1, 0], [0, 0, 1]])
+    assert out[0, 0, 0] > 0.8

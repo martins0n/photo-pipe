@@ -298,6 +298,21 @@ def monochrome(img, mix=(0.30, 0.59, 0.11), filter_strength=1.0):
     return np.repeat(np.clip(grey, 0.0, 1.0)[:, :, None], 3, axis=2).astype(np.float32)
 
 
+def color_matrix(img, m):
+    """3x3 channel mix. Rows are normalised to sum to 1 so greys stay grey.
+
+    This is the piece per-channel curves structurally cannot provide: a curve
+    maps R from R alone, so it can never trade between channels, which is
+    exactly what a camera's colour rendering does. Without it a measured look
+    lands the hue right and the saturation short.
+    """
+    m = np.asarray(m, dtype=np.float32).reshape(3, 3)
+    sums = m.sum(axis=1, keepdims=True)
+    m = m / np.where(np.abs(sums) < 1e-6, 1.0, sums)
+    out = img.reshape(-1, 3) @ m.T
+    return np.clip(out.reshape(img.shape), 0.0, 1.0).astype(np.float32)
+
+
 def vignette(img, a1=0.0, a2=0.0):
     """Radial gain: 1 + a1*r^2 + a2*r^4, with r=1 at the frame corner.
 

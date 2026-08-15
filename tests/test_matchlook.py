@@ -82,3 +82,26 @@ def test_measured_hsl_recovers_a_hue_shift():
     shifts = [v["hue"] for v in hsl.values() if "hue" in v]
     assert shifts, "no hue shift measured at all"
     assert np.median(shifts) > 5
+
+
+def test_measure_matrix_recovers_a_known_mix():
+    from photopipe import imageops as ops
+    img = scene(6)
+    truth = np.array([[1.15, -0.10, -0.05], [0.0, 1.0, 0.0], [-0.05, 0.05, 1.0]])
+    target = ops.color_matrix(img, truth)
+    flat = {c: [[0.0, 0.0], [1.0, 1.0]] for c in ("red", "green", "blue")}
+    m = np.array(matchlook.measure_matrix([(img, target)], flat))
+    assert np.allclose(m, truth, atol=0.06)
+
+
+def test_measure_matrix_rows_sum_to_one():
+    flat = {c: [[0.0, 0.0], [1.0, 1.0]] for c in ("red", "green", "blue")}
+    m = matchlook.measure_matrix([(scene(7), scene(8))], flat)
+    if m is not None:
+        assert np.allclose(np.array(m).sum(axis=1), 1.0, atol=1e-3)
+
+
+def test_identical_pair_needs_no_matrix():
+    img = scene(9)
+    flat = {c: [[0.0, 0.0], [1.0, 1.0]] for c in ("red", "green", "blue")}
+    assert matchlook.measure_matrix([(img, img)], flat) is None

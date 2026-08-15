@@ -150,16 +150,70 @@ def measure_vignette(pairs, curves, bins=24):
             "a2": round(float(np.clip(a2, -0.6, 0.6)), 4)}
 
 
-def measure_hsl(pairs, curves, min_pixels=2000, vignette=None):
+def _staged(neutral, curves, vignette=None, matrix=None):
+    """Our rendering up to the point a given term is fitted."""
+    got = _apply_rgb_curves(neutral, curves)
+    if vignette:
+        got = ops.vignette(got, vignette.get("a1", 0.0), vignette.get("a2", 0.0))
+    if matrix is not None:
+        got = ops.color_matrix(got, matrix)
+    return got
+
+
+def measure_matrix(pairs, curves, vignette=None, sample=60000, seed=0):
+    """Least-squares 3x3 mapping our colours onto the camera's.
+
+    Each row is constrained to sum to 1 so neutrals are untouched, which
+    also drops the fit to two free parameters per row:
+
+        target - B = a*(R - B) + b*(G - B)
+
+    Without that constraint the matrix quietly absorbs exposure and white
+    balance, and then fights the curves that already handle them.
+    """
+    rng = np.random.default_rng(seed)
+    src, dst = [], []
+    for neutral, target in pairs:
+        got = _staged(neutral, curves, vignette)
+        g = got.reshape(-1, 3); t = target.reshape(-1, 3)
+        # Skip clipped pixels: they carry no information about the mapping.
+        m = (g.max(axis=1) < 0.97) & (g.min(axis=1) > 0.02) & (t.max(axis=1) < 0.97)
+        idx = np.flatnonzero(m)
+        if idx.size == 0:
+            continue
+        if idx.size > sample:
+            idx = rng.choice(idx, sample, replace=False)
+        src.append(g[idx]); dst.append(t[idx])
+    if not src:
+        return None
+
+    S = np.concatenate(src).astype(np.float64)
+    D = np.concatenate(dst).astype(np.float64)
+    A = np.stack([S[:, 0] - S[:, 2], S[:, 1] - S[:, 2]], axis=1)
+    rows = []
+    for c in range(3):
+        y = D[:, c] - S[:, 2]
+        try:
+            a, b = np.linalg.lstsq(A, y, rcond=None)[0]
+        except np.linalg.LinAlgError:
+            return None
+        rows.append([a, b, 1.0 - a - b])
+    m = np.asarray(rows)
+    if not np.all(np.isfinite(m)) or np.abs(m).max() > 4.0:
+        return None
+    if np.abs(m - np.eye(3)).max() < 0.01:      # nothing worth storing
+        return None
+    return [[round(float(v), 4) for v in row] for row in m]
+
+
+def measure_hsl(pairs, curves, min_pixels=2000, vignette=None, matrix=None):
     """Per-hue saturation/luminance residual left over after the curves."""
     sums = {b: [0.0, 0.0, 0.0] for b in _BANDS}   # sat ratio, lum ratio, weight
     # Hue is an angle, so it accumulates as a vector — averaging degrees
     # directly breaks across the 0/360 wrap.
     hue_vec = {b: [0.0, 0.0] for b in _BANDS}
     for neutral, target in pairs:
-        got = _apply_rgb_curves(neutral, curves)
-        if vignette:
-            got = ops.vignette(got, vignette.get("a1", 0.0), vignette.get("a2", 0.0))
+        got = _staged(neutral, curves, vignette, matrix)
         g = cv2.cvtColor(np.clip(got, 0, 1), cv2.COLOR_RGB2HSV)
         t = cv2.cvtColor(np.clip(target, 0, 1), cv2.COLOR_RGB2HSV)
         for band in _BANDS:
@@ -199,13 +253,11 @@ def measure_hsl(pairs, curves, min_pixels=2000, vignette=None):
     return hsl
 
 
-def error(pairs, curves, hsl=None, vignette=None):
+def error(pairs, curves, hsl=None, vignette=None, matrix=None):
     """Mean Lab error of the measured look against the camera."""
     total = 0.0
     for neutral, target in pairs:
-        got = _apply_rgb_curves(neutral, curves)
-        if vignette:
-            got = ops.vignette(got, vignette.get("a1", 0.0), vignette.get("a2", 0.0))
+        got = _staged(neutral, curves, vignette, matrix)
         if hsl:
             got = ops.apply_hsl(got, hsl)
         d = (cv2.cvtColor(np.clip(got, 0, 1), cv2.COLOR_RGB2LAB)
@@ -214,7 +266,8 @@ def error(pairs, curves, hsl=None, vignette=None):
     return total / max(len(pairs), 1)
 
 
-def to_recipe(curves, hsl, name, description, order=50, exposure=0.0, vignette=None):
+def to_recipe(curves, hsl, name, description, order=50, exposure=0.0,
+              vignette=None, matrix=None):
     """Assemble the measured pieces into a recipe dict ready to dump as YAML."""
     data = {
         "name": name,
@@ -226,6 +279,8 @@ def to_recipe(curves, hsl, name, description, order=50, exposure=0.0, vignette=N
     data["rgb_curves"] = {k: v for k, v in curves.items()}
     if vignette:
         data["vignette"] = vignette
+    if matrix:
+        data["matrix"] = matrix
     if hsl:
         data["hsl"] = hsl
     return data

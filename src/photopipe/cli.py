@@ -232,8 +232,7 @@ def cmd_match_look(args):
     if not pairs:
         raise SystemExit("no RAW + HIF/JPEG pairs to measure")
 
-    look = develop.read_look_settings(develop.find_sibling_rendered(raws[0])).get(
-        "CreativeStyleName", "camera")
+    look = develop.camera_look_name(develop.find_sibling_rendered(raws[0]))
     print(f"\nmeasuring '{look}' from {len(pairs)} frame(s)")
 
     import math
@@ -244,18 +243,25 @@ def cmd_match_look(args):
     err_curves = matchlook.error(pairs, curves)
     vig = {} if args.no_vignette else matchlook.measure_vignette(pairs, curves)
     err_vig = matchlook.error(pairs, curves, None, vig) if vig else err_curves
-    hsl = {} if args.no_hsl else matchlook.measure_hsl(pairs, curves, vignette=vig)
-    err_full = matchlook.error(pairs, curves, hsl, vig) if hsl else err_vig
+    mat = None if args.no_matrix else matchlook.measure_matrix(pairs, curves, vig)
+    err_mat = matchlook.error(pairs, curves, None, vig, mat) if mat else err_vig
+    if mat and err_mat > err_vig:
+        print("  matrix made it worse — dropping it")
+        mat, err_mat = None, err_vig
+    hsl = ({} if args.no_hsl else
+           matchlook.measure_hsl(pairs, curves, vignette=vig, matrix=mat))
+    err_full = matchlook.error(pairs, curves, hsl, vig, mat) if hsl else err_mat
 
     baseline = matchlook.error(pairs, {c: [[0, 0], [1, 1]] for c in ("red", "green", "blue")})
     print(f"  Lab error  neutral {baseline:6.2f}  ->  curves {err_curves:6.2f}"
           + (f"  ->  +vignette {err_vig:6.2f}" if vig else "")
+          + (f"  ->  +matrix {err_mat:6.2f}" if mat else "")
           + (f"  ->  +hsl {err_full:6.2f}" if hsl else ""))
     if vig:
         print(f"  vignette   a1={vig['a1']:+.3f}  a2={vig['a2']:+.3f}")
-    if hsl and err_full > err_vig:
+    if hsl and err_full > err_mat:
         print("  hsl residual made it worse — dropping it")
-        hsl, err_full = {}, err_vig
+        hsl, err_full = {}, err_mat
 
     slug = args.name or look.lower().replace(" ", "-")
     data = matchlook.to_recipe(
@@ -263,7 +269,7 @@ def cmd_match_look(args):
         description=(f"Sony {look} Creative Look, measured from {len(pairs)} "
                      f"RAW+HEIF pairs. Per-channel transfer curves reproduce the "
                      f"camera's tone and colour; regenerate with `photo-pipe match-look`."),
-        order=args.order, exposure=exposure, vignette=vig)
+        order=args.order, exposure=exposure, vignette=vig, matrix=mat)
 
     dest = args.out_recipe or os.path.join(recipes_mod.default_recipe_dir(), f"{slug}.yaml")
     os.makedirs(os.path.dirname(os.path.abspath(dest)), exist_ok=True)
@@ -454,6 +460,8 @@ def main():
                        help="match the base the recipe will be used on (default dxo)")
     match.add_argument("--fit-size", type=int, default=900)
     match.add_argument("--limit", type=int, default=12, help="max frames to measure")
+    match.add_argument("--no-matrix", action="store_true",
+                       help="skip the 3x3 channel-mix term")
     match.add_argument("--no-vignette", action="store_true",
                        help="skip the lens-falloff term")
     match.add_argument("--no-hsl", action="store_true",

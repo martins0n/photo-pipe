@@ -38,11 +38,7 @@ rgb_curves:
   - [0.88, 0.9112]
   - [1.0, 0.95]
 vignette: {a1: 0.0887, a2: -0.3253}
-hsl:
-  red: {hue: 7, lum: 20}
-  orange: {hue: 2, sat: -5, lum: 7}
-  yellow: {hue: 4, sat: -27, lum: -9}
-  green: {hue: 4, sat: -12}
-  aqua: {hue: -8}
-  blue: {hue: -23, sat: -6, lum: -5}
-  magenta: {hue: 30, sat: -7, lum: 38}
+matrix:
+- [1.1971, -0.3279, 0.1308]
+- [0.1249, 0.5351, 0.34]
+- [-0.0218, 0.1126, 0.9092]

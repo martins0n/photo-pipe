@@ -138,6 +138,45 @@ LOOK_TAGS = ["CreativeStyle", "Contrast", "Saturation", "Sharpness", "Shadows",
              "Highlights", "Fade", "Clarity", "SharpnessRange", "WBShiftAB",
              "WBShiftGM", "DynamicRangeOptimizer"]
 
+# Every maker names its picture-style setting differently; try them in turn and
+# take the first that answers. Order matters only in that a more specific tag
+# should precede a more generic one for the same brand.
+LOOK_NAME_TAGS = [
+    "CreativeStyle",        # Sony  (Creative Look: FL, VV, IN, ...)
+    "CreativeLook",         # Sony, newer bodies
+    "FilmMode",             # Fujifilm (Provia / Velvia / Astia / Classic Chrome)
+    "SaturationSetting",    # Fujifilm, when FilmMode is absent
+    "PictureControlName",   # Nikon
+    "PictureStyle",         # Canon
+    "PictureMode",          # Olympus / OM System
+    "PhotoStyle",           # Panasonic
+    "FilmSimulation",       # some Fujifilm exports
+]
+
+
+def camera_look_name(path, default="camera"):
+    """The camera's picture-style name, whatever the maker calls it.
+
+    Returns something like "FL" (Sony) or "Classic Chrome" (Fujifilm), falling
+    back to the model name so a measured recipe is still identifiable.
+    """
+    try:
+        args = ["exiftool", "-j", "-Model"] + [f"-{t}" for t in LOOK_NAME_TAGS]
+        data = json.loads(subprocess.run(args + [path], capture_output=True,
+                                         check=True, text=True).stdout)[0]
+    except Exception:
+        return default
+    for tag in LOOK_NAME_TAGS:
+        value = data.get(tag)
+        if value not in (None, "", "n/a", "Off", "None"):
+            # Fuji writes things like "F2/Fujichrome (Velvia)" — keep the name
+            # a human would use.
+            text = str(value)
+            if "(" in text and text.endswith(")"):
+                text = text[text.rindex("(") + 1:-1]
+            return text.strip()
+    return str(data.get("Model") or default).strip()
+
 
 def read_look_settings(path):
     """The camera's Creative Look state, as numbers, from Sony's MakerNotes.

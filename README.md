@@ -226,11 +226,22 @@ while `fl` keeps the camera's blue.*
 ### How it works
 
 For each frame it develops the raw to a neutral rendering, then measures where
-every input level actually lands in the camera's output. Binned medians across
-many frames give a **transfer curve per channel**, which captures tone and
-colour balance in one go. A residual pass in HSL picks up what per-channel
-curves structurally cannot — hue-dependent saturation, like muted foliage
-beside an untouched sky.
+every input level actually lands in the camera's output. Four terms are fitted
+in sequence, each on what the previous one left behind, and each is kept only
+if it actually lowers the error:
+
+| term | what it captures |
+|---|---|
+| `rgb_curves` | tone and colour balance, from binned medians per channel |
+| `vignette` | the lens-falloff difference between the raw developer and the camera |
+| `matrix` | a 3×3 channel mix — what a per-channel curve structurally cannot do, since a curve maps R from R alone and can never trade between channels |
+| `hsl` | whatever is left that is genuinely hue-specific |
+
+The matrix is the one that closes the colour gap. Its rows are constrained to
+sum to 1 so neutrals stay neutral, which also drops the fit to two free
+parameters per row and stops it quietly absorbing exposure and white balance.
+On a real measurement it took the error from 5.98 to 5.22 and made the HSL
+pass redundant — which the tool detects and drops.
 
 The output is an ordinary recipe you can open and edit:
 
@@ -269,8 +280,24 @@ Lab error  neutral 9.10  ->  curves 6.15  ->  +hsl 5.79
 
 If the HSL pass makes things worse it is dropped automatically.
 
+### Any camera that shoots RAW+JPEG
+
+Nothing in `match-look` is Sony-specific. It needs a raw and the camera's own
+rendering of the same frame, so a Fujifilm `.RAF` + `.JPG` pair works the same
+way, as do Nikon, Canon, Olympus and Panasonic. The picture-style name is read
+from whichever tag the maker uses — `CreativeStyle`, `FilmMode`,
+`PictureControlName`, `PictureStyle`, `PictureMode`, `PhotoStyle` — and falls
+back to the model name:
+
+```bash
+photo-pipe match-look ~/Photos/fuji-shoot --name classic-neg
+```
+
+(`fit-camera` is the opposite case: its slider model is Sony Creative Look and
+does not transfer.)
+
 Useful flags: `--limit N` (frames to measure, default 12), `--no-hsl` /
-`--no-vignette` to drop a term, `--denoise none` to measure against a LibRaw
+`--no-vignette` / `--no-matrix` to drop a term, `--denoise none` to measure against a LibRaw
 base instead of DxO — measure against whichever base you will actually render
 on.
 

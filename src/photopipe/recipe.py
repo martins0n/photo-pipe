@@ -126,6 +126,13 @@ def apply_recipe(linear_rgb, recipe, seed=0):
         img = ops.vignette(img, float(vig.get("a1", 0.0)), float(vig.get("a2", 0.0)))
 
     # --- colour ---
+    # Matrix before the hue bands: it is the global, well-conditioned part of
+    # the colour difference, so let it take what it can and leave the bands to
+    # mop up what is genuinely hue-specific.
+    mat = r.get("matrix")
+    if mat:
+        img = ops.color_matrix(img, mat)
+
     img = ops.apply_hsl(img, r.get("hsl") or {})
 
     mono = r.get("monochrome")
