@@ -5,7 +5,7 @@ it has enough adjustment to get most of the way to Classic Chrome — the look
 is largely *subtraction* (less saturation, restrained highlights), which is
 what these sliders do well.
 
-The values below were **measured, not guessed**: `./pipe.py fit-camera` solves
+The values below were **measured, not guessed**: `photo-pipe fit-camera` solves
 for the Creative Look sliders that best turn a neutral rendering into the
 `classic-chrome` recipe, using your own frames. See
 [How this was derived](#how-this-was-derived) — and note it overturned several
@@ -62,7 +62,7 @@ less leaves it looking like a slightly flat Standard.
 ## How this was derived
 
 ```bash
-./pipe.py fit-camera ~/Images/2026-07-30 --recipe classic-chrome
+photo-pipe fit-camera ~/Images/2026-07-30 --recipe classic-chrome
 ```
 
 The command has both ends of the problem already: your camera's SOOC HEIF, and
@@ -121,7 +121,7 @@ above, and it is what the raw pipeline is for.
 Shoot a few frames with the settings above, then:
 
 ```bash
-./pipe.py run ~/Images/<date> --recipes classic-chrome --collage --preview
+photo-pipe run ~/Images/<date> --recipes classic-chrome --collage --preview
 ```
 
 The sheet puts your SOOC next to the recipe on the same frame.

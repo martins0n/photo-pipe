@@ -1,7 +1,7 @@
 # Recipe template — every supported key, with its default.
 #
 # To make a new look: copy this to recipes/my-look.yaml, delete everything you
-# don't need, and run `./pipe.py run <photos> --recipes my-look`. The filename
+# don't need, and run `photo-pipe run <photos> --recipes my-look`. The filename
 # (minus .yaml) is the slug you pass on the command line. Any key you omit is a
 # no-op, so a three-line recipe is perfectly valid.
 #
@@ -10,7 +10,7 @@
 
 name: My Look                 # shown in the collage header
 description: >
-  Free text. Wrapped and printed by `./pipe.py recipes`.
+  Free text. Wrapped and printed by `photo-pipe recipes`.
 order: 100                    # sort position in listings and collage columns
 
 # ---------------------------------------------------------------------------
@@ -46,8 +46,27 @@ rgb_curves:                   # optional per-channel curves, same format
   blue:  []
 
 # ---------------------------------------------------------------------------
-# 3. Colour
+# 3. Lens
 # ---------------------------------------------------------------------------
+# Radial gain, 1 + a1*r^2 + a2*r^4, with r=1 at the corner. Mostly written by
+# `match-look`: the raw developer and the camera rarely agree on how much lens
+# falloff to remove, and the difference is a systematic edge-vs-centre shift
+# that no tone curve can express. Negative a1 darkens the corners.
+# vignette: {a1: -0.10, a2: 0.02}
+
+# ---------------------------------------------------------------------------
+# 4. Colour
+# ---------------------------------------------------------------------------
+# 3x3 channel mix, applied before the hue bands. This is the one thing a
+# per-channel curve cannot do: a curve maps R from R alone and can never trade
+# between channels, which is exactly what a camera's colour rendering does.
+# Rows are normalised to sum to 1, so greys stay grey no matter what you type.
+# Usually written by `match-look`; by hand, start from identity and nudge.
+# matrix:
+#   - [1.00, 0.00, 0.00]
+#   - [0.00, 1.00, 0.00]
+#   - [0.00, 0.00, 1.00]
+
 # Eight hue bands: red orange yellow green aqua blue purple magenta
 #   hue: degrees to rotate    sat: percent    lum: percent
 # Bands fade out on near-grey pixels, so shadow noise doesn't pick up colour.
@@ -78,7 +97,7 @@ split_tone:                   # signed RGB pushes, roughly -100..100
   strength: 1.0               # both tints fade out at pure black/white
 
 # ---------------------------------------------------------------------------
-# 4. Detail
+# 5. Detail
 # ---------------------------------------------------------------------------
 clarity: 0.0                  # large-radius local contrast, ~0.1 subtle, 0.3 heavy
 sharpen:

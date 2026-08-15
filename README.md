@@ -81,8 +81,8 @@ open -n -b com.dxo-labs.PureRAWv6.standalone --args \
 
 PureRAW processes the whole batch unattended and writes
 `<stem>-DxO_<method>.dng` **next to each source file** — which is exactly why
-the pipeline stages hardlinks into `work/01_dxo/` first, instead of letting it
-write into your photo library.
+the pipeline stages hardlinks into `~/.cache/photo-pipe/01_dxo/` first,
+instead of letting it write into your photo library.
 
 Three modes exist; all take the same arguments:
 
@@ -97,7 +97,7 @@ saved processing preset, not from the command line. Set it once in the PureRAW
 UI and every later pipeline run follows it. Output naming reflects whichever
 was used, e.g. `DSC06491-DxO_DeepPRIME 3.dng`.
 
-The stage is cached: a source that already has a `-DxO_*` output in `work/`
+The stage is cached: a source that already has a `-DxO_*` output in the cache
 is skipped, so re-running to iterate on a look costs nothing.
 
 ---
@@ -107,14 +107,14 @@ is skipped, so re-running to iterate on a look costs nothing.
 1. **Denoise / demosaic / optics** — DxO PureRAW, as above. `--denoise none`
    skips it and develops the ARW directly, which is the honest A/B for judging
    what DxO is actually contributing.
-2. **Develop** (`photopipe/develop.py`) — LibRaw decode to **scene-linear**
+2. **Develop** (`src/photopipe/develop.py`) — LibRaw decode to **scene-linear**
    RGB. No tone mapping happens here on purpose: every recipe starts from the
    same neutral base, so a comparison is a real comparison. Auto-exposure
    blends a highlight anchor with a log-average key anchor; see `--lift`.
    It deliberately aims *above* white (`highlight_target` 1.6) and lets each
    recipe's shoulder bring the highlights back, which is what keeps daylight
    frames from rendering dark.
-3. **Recipe** (`photopipe/recipe.py`) — the look, from a YAML file.
+3. **Recipe** (`src/photopipe/recipe.py`) — the look, from a YAML file.
 4. **Export + collage** — JPEG with EXIF carried over, then a contact sheet.
 
 Exports are **full resolution** by default; `--preview` does a fast 1600px
@@ -132,7 +132,7 @@ If a frame was shot RAW+HEIF, the camera's own `.HIF` is added as the leftmost
 collage column, untouched by any recipe — the honest baseline for judging what
 the pipeline is adding. HEIF is decoded with macOS's built-in `sips`, which
 applies EXIF orientation (so portrait frames come back upright) and is cached
-in `work/02_sooc/`.
+in `~/.cache/photo-pipe/02_sooc/`.
 
 `--reference auto` (default) uses it when it exists, `hif` requires it, `none`
 skips it.
@@ -162,12 +162,17 @@ numbers. It runs:
 
 | # | stage | keys |
 |---|---|---|
-| 1 | scene-linear | `exposure`, `temp`, `tint`, `highlight_rolloff` |
+| 1 | scene-linear | `exposure`, `temp`, `tint`, `highlight_rolloff` + `highlight_knee` |
 | 2 | → display space (sRGB encode) | |
 | 3 | tone | `curve`, `rgb_curves` |
-| 4 | colour | `hsl`, then `saturation`/`vibrance` **or** `monochrome` |
-| 5 | tone split | `split_tone` |
-| 6 | detail | `clarity`, `sharpen`, `grain` |
+| 4 | lens | `vignette` |
+| 5 | colour | `matrix`, then `hsl`, then `saturation`/`vibrance` **or** `monochrome` |
+| 6 | tone split | `split_tone` |
+| 7 | detail | `clarity`, `sharpen`, `grain` |
+
+The last four keys — `vignette`, `matrix`, `rgb_curves` and a fully populated
+`hsl` — are what `match-look` writes. They are ordinary keys, so a measured
+recipe is just as editable as a hand-written one.
 
 Notes that matter when dialling numbers in:
 
@@ -345,7 +350,7 @@ fits the values that bridge them, reporting deltas from your camera's current
 settings plus a verification strip.
 
 ```bash
-./pipe.py fit-camera ~/Images/2026-07-30 --recipe classic-chrome
+photo-pipe fit-camera ~/Images/2026-07-30 --recipe classic-chrome
 ```
 
 By default it fits against the pipeline's own neutral render rather than the
@@ -379,5 +384,19 @@ Recipes are looked up in this order, so editing a look never means touching an
 installed package: `$PHOTOPIPE_RECIPES` → `./recipes` → the bundled defaults.
 
 ```bash
-pytest        # 34 tests, no photos required
+pytest                                          # 67 tests, no photos required
+PHOTOPIPE_UPDATE_GOLDEN=1 pytest tests/test_regression.py   # re-bless snapshots
 ```
+
+Two kinds of test. The unit tests check **properties** — a shoulder is
+identity below the knee, a curve is monotone, a zero amount is a no-op. Those
+pass just as happily after a change that quietly shifts every rendered photo,
+which has already happened twice here (a rolloff that darkened midtones 20%,
+a mono mix that did nothing). So there are also **regression snapshots**:
+every shipped recipe and every primitive is rendered against a synthetic
+scene and pinned to about one 8-bit level. Reintroducing the old rolloff bug
+fails six of them.
+
+The scene is built, not loaded, so the suite needs no photos: an exposure ramp
+reaching past white for the shoulder, a vertical hue sweep for the colour
+stages, and dark and bright corners for vignette and split-tone.
