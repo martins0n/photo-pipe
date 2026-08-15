@@ -224,9 +224,10 @@ photo-pipe match-look ~/Images/2026-08-15 --name fl
 
 ![measured FL](docs/examples/fl-measured.jpg)
 
-*Left: Sony's FL Creative Look. Middle: the measured `fl` recipe. Right:
-Classic Chrome, for contrast — note how it pushes the sky toward lavender
-while `fl` keeps the camera's blue.*
+*Left: Sony's FL Creative Look. Middle: the measured `fl` recipe, rendered
+with `--match-exposure`. Right: Classic Chrome, for contrast — note how it
+pushes the sky toward lavender while `fl` keeps the camera's blue. Sky hue
+lands within 1–2° of the camera and saturation within about 0.05.*
 
 ### How it works
 
@@ -252,15 +253,21 @@ The output is an ordinary recipe you can open and edit:
 
 ```yaml
 name: FL (measured)
-exposure: -0.852
+exposure: -0.852               # vs the pipeline's auto-exposure
 rgb_curves:
   red:   [[0.0, 0.0011], [0.04, 0.0114], ...]
   green: [[0.0, 0.0040], [0.04, 0.0143], ...]
   blue:  [[0.0, 0.0019], [0.04, 0.0113], ...]
-hsl:
-  yellow: {sat: -27, lum: -10}
-  green:  {sat: -12}
+vignette: {a1: 0.0887, a2: -0.3253}
+matrix:
+  - [ 1.1971, -0.3279,  0.1308]
+  - [ 0.1249,  0.5351,  0.3400]
+  - [-0.0218,  0.1126,  0.9092]
 ```
+
+No `hsl:` block here — on this measurement the matrix absorbed the hue-band
+residual and adding HSL on top made the error worse, so it was dropped. That
+is the tool checking each term rather than emitting all of them.
 
 ### Two things that decide whether the result is any good
 

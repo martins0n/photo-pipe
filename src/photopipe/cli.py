@@ -266,9 +266,12 @@ def cmd_match_look(args):
     slug = args.name or look.lower().replace(" ", "-")
     data = matchlook.to_recipe(
         curves, hsl, name=args.title or f"{look} (measured)",
-        description=(f"Sony {look} Creative Look, measured from {len(pairs)} "
-                     f"RAW+HEIF pairs. Per-channel transfer curves reproduce the "
-                     f"camera's tone and colour; regenerate with `photo-pipe match-look`."),
+        description=(f"{look} camera look, measured from {len(pairs)} raw + "
+                     f"camera-JPEG pairs: per-channel transfer curves"
+                     + (", lens falloff" if vig else "")
+                     + (", a 3x3 channel mix" if mat else "")
+                     + (", per-hue residual" if hsl else "")
+                     + ". Regenerate with `photo-pipe match-look`."),
         order=args.order, exposure=exposure, vignette=vig, matrix=mat)
 
     dest = args.out_recipe or os.path.join(recipes_mod.default_recipe_dir(), f"{slug}.yaml")
