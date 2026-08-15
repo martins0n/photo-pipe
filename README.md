@@ -399,9 +399,17 @@ identity below the knee, a curve is monotone, a zero amount is a no-op. Those
 pass just as happily after a change that quietly shifts every rendered photo,
 which has already happened twice here (a rolloff that darkened midtones 20%,
 a mono mix that did nothing). So there are also **regression snapshots**:
-every shipped recipe and every primitive is rendered against a synthetic
-scene and pinned to about one 8-bit level. Reintroducing the old rolloff bug
-fails six of them.
+every primitive, the measurement path, and four recipes are rendered against
+a synthetic scene and pinned to about one 8-bit level. Reintroducing the old
+rolloff bug fails six of them.
+
+Those four recipes are **frozen inside the test file**, not loaded from
+`recipes/`. Editing a look is a normal thing to do and must not fail the
+engine suite, and a measured recipe is rewritten by every `match-look` run,
+so snapshotting the shipped YAML would break the build for no reason. The
+shipped looks get their own, looser test: they have to render, not to render
+identically. A separate test asserts the frozen set still exercises every key
+the engine supports, so a new key cannot arrive untested.
 
 The scene is built, not loaded, so the suite needs no photos: an exposure ramp
 reaching past white for the shoulder, a vertical hue sweep for the colour

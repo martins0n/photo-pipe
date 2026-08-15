@@ -1,4 +1,10 @@
-"""Regression snapshots for the rendering pipeline.
+"""Regression snapshots for the rendering engine.
+
+What is pinned here is the *engine*, driven by recipes frozen in this file —
+not the shipped YAML. Those are two different failures and deserve two
+different messages: editing a look is routine and must not fail the engine
+suite, and a generated recipe (`match-look` rewrites its output every run)
+would otherwise break the build for no reason.
 
 The unit tests check properties — monotone, identity, in-range. Those pass
 just as happily after a change that quietly shifts every rendered photo, which
@@ -78,13 +84,54 @@ def compare(name, got, golden):
         assert np.allclose(got[key], want[key], atol=TOL), f"{name}: {key} moved"
 
 
+# Recipes frozen here rather than loaded from disk. Snapshotting the shipped
+# YAML would conflate two unrelated failures: "the engine changed" and "someone
+# edited a look". It also breaks on generated recipes — `match-look` rewrites
+# its output every run, so a measured recipe in recipes/ would fail the suite
+# for no reason. These definitions change only when this file is edited, and
+# between them they exercise every key the engine supports.
+FROZEN_RECIPES = {
+    "frozen/tone": {
+        "exposure": 0.15, "temp": 0.05, "tint": -0.03,
+        "highlight_rolloff": 1.75, "highlight_knee": 0.55,
+        "curve": [[0.0, 0.03], [0.25, 0.22], [0.5, 0.52], [0.75, 0.8], [1.0, 0.98]],
+        "saturation": 1.1, "vibrance": 0.12,
+    },
+    "frozen/colour": {
+        "highlight_rolloff": 1.6,
+        "rgb_curves": {
+            "red": [[0.0, 0.02], [0.5, 0.54], [1.0, 0.97]],
+            "green": [[0.0, 0.0], [0.5, 0.5], [1.0, 1.0]],
+            "blue": [[0.0, 0.04], [0.5, 0.47], [1.0, 0.95]],
+        },
+        "vignette": {"a1": 0.09, "a2": -0.33},
+        "matrix": [[1.2, -0.3, 0.1], [0.1, 0.55, 0.35], [-0.02, 0.11, 0.91]],
+        "hsl": {"blue": {"hue": -12, "sat": 20, "lum": -8},
+                "green": {"sat": -25}, "orange": {"lum": 6}},
+        "saturation": 0.85,
+    },
+    "frozen/mono": {
+        "highlight_rolloff": 1.75,
+        "curve": [[0.0, 0.0], [0.2, 0.155], [0.5, 0.5], [0.8, 0.84], [1.0, 0.99]],
+        "hsl": {"blue": {"lum": -22}, "aqua": {"lum": -14}},
+        "monochrome": {"mix": [0.45, 0.45, 0.10], "filter": 1.0},
+        "split_tone": {"shadows": [-2, 0, 3], "highlights": [3, 1, -2],
+                       "balance": 0.5, "strength": 0.5},
+        "clarity": 0.25,
+        "sharpen": {"amount": 0.6, "radius": 0.8, "threshold": 1.0},
+        "grain": {"amount": 0.55, "size": 1.4},
+    },
+    "frozen/empty": {},          # every key omitted must stay a valid no-op look
+}
+
+
 def build_snapshots():
     scene = synthetic_scene()
     snaps = {}
 
-    # Every shipped recipe, end to end.
-    for r in R.load_all(R.PACKAGED_RECIPE_DIR):
-        snaps[f"recipe/{r.slug}"] = digest(R.apply_recipe(scene, r, seed=1234))
+    # The engine, driven by recipes that live in this file.
+    for name, data in FROZEN_RECIPES.items():
+        snaps[name] = digest(R.apply_recipe(scene, R.Recipe(dict(data)), seed=1234))
 
     # Individual primitives, so a failure points at the operator rather than
     # leaving five recipes red at once.
@@ -150,6 +197,29 @@ def test_no_snapshot_was_silently_dropped(snapshots, golden):
 @pytest.mark.parametrize("name", sorted(build_snapshots()))
 def test_render_matches_snapshot(name, snapshots, golden):
     compare(name, snapshots[name], golden)
+
+
+def test_shipped_recipes_render_sanely():
+    """The shipped looks are not snapshotted — editing one is a normal thing to
+    do, and it must not fail the engine suite. They still have to render."""
+    scene = synthetic_scene()
+    for r in R.load_all(R.PACKAGED_RECIPE_DIR):
+        out = R.apply_recipe(scene, r, seed=1)
+        assert np.all(np.isfinite(out)), f"{r.slug} produced non-finite pixels"
+        assert out.min() >= 0.0 and out.max() <= 1.0, f"{r.slug} left [0,1]"
+
+
+def test_frozen_recipes_cover_every_engine_key():
+    """A key nobody exercises is a key that can regress unnoticed."""
+    covered = set()
+    for data in FROZEN_RECIPES.values():
+        covered |= set(data)
+    expected = {
+        "exposure", "temp", "tint", "highlight_rolloff", "highlight_knee",
+        "curve", "rgb_curves", "vignette", "matrix", "hsl", "saturation",
+        "vibrance", "monochrome", "split_tone", "clarity", "sharpen", "grain",
+    }
+    assert expected <= covered, f"not exercised by any snapshot: {sorted(expected - covered)}"
 
 
 def test_scene_itself_is_stable():
