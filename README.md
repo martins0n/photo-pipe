@@ -36,8 +36,9 @@ out  = recipe.apply_recipe(base, look)           # display-referred [0,1]
 develop.save_jpeg(out, "out.jpg", exif_from="DSC0001.ARW")
 ```
 
-Your originals are only ever read. Raws are hardlinked into `work/`, PureRAW
-writes there, and every output lands in `out/`.
+Your originals are only ever read. Raws are hardlinked into a cache outside
+your photo library (`~/.cache/photo-pipe`, override with `PHOTOPIPE_WORK` or
+`--work`), PureRAW writes there, and exports land in `--out` (default `./out`).
 
 ---
 
@@ -206,7 +207,7 @@ src/photopipe/
   recipes/*.yaml         bundled default looks
 recipes/*.yaml           your looks — these win over the bundled ones
 tests/                   pytest suite
-work/                    hardlinked raws + PureRAW output (cache, disposable)
+~/.cache/photo-pipe/     hardlinked raws + PureRAW output (shared cache)
 out/                     JPEGs + comparison.png
 ```
 

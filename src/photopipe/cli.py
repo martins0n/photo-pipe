@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """photo-pipe — end-to-end raw pipeline: ARW -> DxO PureRAW -> recipe -> JPEG.
 
-    ./pipe.py recipes
-    ./pipe.py run ~/Images/2026-08-14 --collage
-    ./pipe.py run ~/Images/2026-08-14 --recipes velvia,acros --full
-    ./pipe.py run photo.ARW --denoise none          # A/B without DxO
+    photo-pipe recipes
+    photo-pipe run ~/Images/2026-08-14 --collage
+    photo-pipe run ~/Images/2026-08-14 --recipes velvia,acros --preview
+    photo-pipe run photo.ARW --denoise none          # A/B without DxO
+    photo-pipe fit-camera ~/Images/2026-07-30        # camera settings for a look
 
-Nothing is ever written next to your originals: raws are hardlinked into
-work/ and every output lands in out/.
+Nothing is ever written next to your originals: raws are hardlinked into a
+cache outside the photo library (~/.cache/photo-pipe) and exports go to --out.
 """
 
 import argparse
@@ -228,6 +229,17 @@ def cmd_fit_camera(args):
     print(f"\nwrote {min(len(used), args.strips)} verification strip(s) -> {out_dir}")
 
 
+def default_work_dir():
+    """Where the DxO cache lives.
+
+    Deliberately *not* the working directory: the command is on PATH, so it
+    gets run from inside photo folders, and a work/ full of staged hardlinks
+    has no business appearing in a photo library. A fixed cache also means the
+    expensive PureRAW stage is reused no matter where you run from.
+    """
+    return os.environ.get("PHOTOPIPE_WORK") or os.path.expanduser("~/.cache/photo-pipe")
+
+
 def main():
     # Resolved here rather than at import time so the library can be used
     # from anywhere without the working directory being baked in.
@@ -243,7 +255,8 @@ def main():
     run.add_argument("--recipes", help="comma-separated slugs (default: all)")
     run.add_argument("--denoise", choices=["dxo", "none"], default="dxo")
     run.add_argument("--out", default=os.path.join(here, "out"))
-    run.add_argument("--work", default=os.path.join(here, "work"))
+    run.add_argument("--work", default=default_work_dir(),
+                     help="DxO cache dir (default: ~/.cache/photo-pipe)")
     run.add_argument("--max-dim", type=int, default=None,
                      help="downscale exports to this long edge (default: full resolution)")
     run.add_argument("--preview", action="store_true",
@@ -280,7 +293,7 @@ def main():
     fit.add_argument("--strips", type=int, default=3,
                      help="how many verification strips to write")
     fit.add_argument("--out", default=os.path.join(here, "out"))
-    fit.add_argument("--work", default=os.path.join(here, "work"))
+    fit.add_argument("--work", default=default_work_dir())
     fit.add_argument("--lift", type=float, default=0.25)
     fit.add_argument("--tile", type=int, default=900)
     fit.set_defaults(func=cmd_fit_camera)
