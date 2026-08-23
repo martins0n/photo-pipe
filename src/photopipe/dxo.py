@@ -130,56 +130,107 @@ def prune(stage_dir, max_bytes, log=print):
     return freed, removed
 
 
-def process(raw_paths, stage_dir, mode=MODE_LAST_SETTINGS, timeout=1800, log=print):
-    """Run a batch through PureRAW. Returns {source_path: output_dng_path}.
+def _scan_outputs(stage_dir, stems):
+    """Map stem -> PureRAW output for the stems we are waiting on.
 
-    Sources already carrying a PureRAW output in stage_dir are skipped, so a
-    re-run is cheap and the expensive stage is effectively cached.
+    One listdir per sweep rather than one per stem: with a few hundred frames
+    queued the per-stem version spends more time walking the directory than
+    waiting on the app.
+    """
+    found = {}
+    for f in os.listdir(stage_dir):
+        if "-DxO_" not in f or not f.lower().endswith((".dng", ".jpg", ".tif", ".tiff")):
+            continue
+        stem = f.split("-DxO_")[0]
+        if stem not in stems:
+            continue
+        path = os.path.join(stage_dir, f)
+        best = found.get(stem)
+        # Prefer DNG; among equals take the newest.
+        if best is None or (not best.lower().endswith(".dng") and path.lower().endswith(".dng")) \
+                or (best.lower().endswith(".dng") == path.lower().endswith(".dng")
+                    and os.path.getmtime(path) > os.path.getmtime(best)):
+            found[stem] = path
+    return found
+
+
+def process_iter(raw_paths, stage_dir, mode=MODE_LAST_SETTINGS, timeout=1800, log=print):
+    """Yield (source_path, output_path) as each frame comes out of PureRAW.
+
+    Sources already carrying a PureRAW output in stage_dir are yielded straight
+    away, so a re-run is cheap and the expensive stage is effectively cached.
+
+    `timeout` is a *stall* budget, not a budget for the whole batch: the clock
+    restarts every time a frame lands. A batch of five and a batch of five
+    hundred therefore get the same generous allowance for any single frame,
+    while an app sitting on a modal prompt still fails instead of hanging. The
+    old whole-batch deadline meant a large enough queue could not finish no
+    matter how healthy the run was — and because this stage ran to completion
+    before anything was exported, that failure threw away every frame it had
+    already denoised.
     """
     if not available():
         raise RuntimeError(f"DxO PureRAW not found at {APP_PATH}")
 
     os.makedirs(stage_dir, exist_ok=True)
-    staged, results, todo = {}, {}, []
+    staged, cached, todo = {}, [], []
     for src in raw_paths:
         stem = os.path.splitext(os.path.basename(src))[0]
         dst = _stage(src, stage_dir)
         staged[stem] = src
         existing = _find_output(stage_dir, stem)
         if existing:
-            log(f"    cached  {os.path.basename(existing)}")
-            results[src] = existing
+            cached.append((src, existing))
         else:
             todo.append(dst)
 
-    if not todo:
-        return results
+    if todo:
+        batch_file = os.path.join(stage_dir, ".dxo_batch.txt")
+        with open(batch_file, "w") as fh:
+            fh.write("\n".join(todo))
 
-    batch_file = os.path.join(stage_dir, ".dxo_batch.txt")
-    with open(batch_file, "w") as fh:
-        fh.write("\n".join(todo))
+        log(f"    launching PureRAW on {len(todo)} file(s)...")
+        subprocess.run(
+            ["open", "-n", "-b", BUNDLE_ID, "--args",
+             mode, f"--lr-version={LR_VERSION}", f"--batch-file={batch_file}"],
+            check=True)
 
-    log(f"    launching PureRAW on {len(todo)} file(s)...")
-    subprocess.run(
-        ["open", "-n", "-b", BUNDLE_ID, "--args",
-         mode, f"--lr-version={LR_VERSION}", f"--batch-file={batch_file}"],
-        check=True)
+    # Hand back what is already on disk before waiting on anything, so a
+    # resumed run goes straight to developing.
+    for src, out in cached:
+        log(f"    cached  {os.path.basename(out)}")
+        yield src, out
 
     pending = {os.path.splitext(os.path.basename(p))[0] for p in todo}
-    deadline = time.time() + timeout
-    while pending and time.time() < deadline:
-        for stem in sorted(pending):
-            out = _find_output(stage_dir, stem)
-            if out and _settled(out):
-                log(f"    done    {os.path.basename(out)}")
-                results[staged[stem]] = out
-                pending.discard(stem)
-        if pending:
+    while pending:
+        deadline = time.time() + timeout
+        fresh = []
+        while not fresh:
+            # Look before judging: a frame that landed during the last wait
+            # counts as progress, however long that wait happened to be.
+            for stem, out in _scan_outputs(stage_dir, pending).items():
+                if _settled(out):
+                    fresh.append((stem, out))
+            if fresh:
+                break
+            if time.time() >= deadline:
+                raise TimeoutError(
+                    f"PureRAW produced nothing for {timeout}s with "
+                    f"{len(pending)} frame(s) left: {sorted(pending)}. "
+                    "If its window is showing a prompt, answer it once and "
+                    "re-run — the setting is remembered.")
             time.sleep(2.0)
+        for stem, out in fresh:
+            log(f"    done    {os.path.basename(out)}")
+            yield staged[stem], out
+            pending.discard(stem)
 
-    if pending:
-        raise TimeoutError(
-            f"PureRAW did not finish {sorted(pending)} within {timeout}s. "
-            "If its window is showing a prompt, answer it once and re-run — "
-            "the setting is remembered.")
-    return results
+
+def process(raw_paths, stage_dir, mode=MODE_LAST_SETTINGS, timeout=1800, log=print):
+    """Run a batch through PureRAW. Returns {source_path: output_dng_path}.
+
+    The eager form of process_iter, for callers that want the whole batch
+    before they start.
+    """
+    return dict(process_iter(raw_paths, stage_dir, mode=mode,
+                             timeout=timeout, log=log))

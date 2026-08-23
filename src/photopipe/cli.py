@@ -70,12 +70,16 @@ def cmd_run(args):
     print(f"  out     : {out_dir}\n")
 
     # --- stage 1: denoise / demosaic ---
+    # Streamed, not batched: PureRAW is a separate process, so developing a
+    # frame the moment its DNG lands overlaps the two expensive stages for
+    # free, and a frame exported early survives a later failure.
     if args.denoise == "dxo":
         print("[1/4] DxO PureRAW")
-        sources = dxo.process(raws, stage_dir, log=print)
+        stream = dxo.process_iter(raws, stage_dir,
+                                  timeout=args.dxo_timeout, log=print)
     else:
         print("[1/4] DxO skipped — developing the ARW directly")
-        sources = {r: r for r in raws}
+        stream = ((r, r) for r in raws)
 
     max_dim = 1600 if args.preview else args.max_dim
 
@@ -85,10 +89,11 @@ def cmd_run(args):
     if args.reference == "hif" and not use_reference:
         raise SystemExit("--reference hif: no HIF/JPEG found next to any input")
 
-    grid, row_labels, row_subs = [], [], []
+    # Keyed by source rather than appended: frames arrive in whatever order
+    # PureRAW finishes them, while the collage wants the order you asked for.
+    rows = {}
 
-    for src in raws:
-        developed_from = sources.get(src, src)
+    for src, developed_from in stream:
         stem = os.path.splitext(os.path.basename(src))[0]
         print(f"\n[2/4] develop {stem}  ({os.path.basename(developed_from)})")
         base = develop.develop(developed_from, max_dim=max_dim, key_weight=args.lift)
@@ -111,12 +116,12 @@ def cmd_run(args):
             print(f"      exposure matched to {os.path.basename(siblings[src])} "
                   f"({np.log2(gain):+.2f} stops)")
 
-        meta = develop.read_exif(src)
         row = []
 
         # The camera's own rendering, as the leftmost reference column. It is
         # already display-referred, so no recipe is applied — that is the point.
-        if use_reference:
+        # Decoding it is pure collage work, so it waits for a collage to exist.
+        if args.collage and use_reference:
             sib = siblings[src]
             if sib:
                 print(f"[3/4]   reference  ({os.path.basename(sib)})")
@@ -137,15 +142,23 @@ def cmd_run(args):
             img = recipes_mod.apply_recipe(base, use, seed=abs(hash(stem)) % (2 ** 31))
             path = os.path.join(out_dir, f"{stem}_{r.slug}.jpg")
             develop.save_jpeg(img, path, quality=args.quality, exif_from=src)
-            row.append(img)
-        grid.append(row)
-        row_labels.append(stem)
-        row_subs.append(develop.exif_caption(meta))
+            if args.collage:
+                row.append(img)
+        # Only the collage needs the pixels afterwards. Holding every frame at
+        # full resolution otherwise costs hundreds of MB apiece, which a long
+        # run turns into tens of GB for a sheet nobody asked for.
+        if args.collage:
+            # One exiftool call per frame, and only the caption wants it.
+            rows[src] = (row, stem,
+                         develop.exif_caption(develop.read_exif(src)))
 
     # --- stage 4: comparison sheet ---
     if args.collage:
         print("\n[4/4] collage")
         sheet = os.path.join(out_dir, args.collage_out)
+        grid = [rows[src][0] for src in raws if src in rows]
+        row_labels = [rows[src][1] for src in raws if src in rows]
+        row_subs = [rows[src][2] for src in raws if src in rows]
         col_labels = [r.name for r in picked]
         if use_reference:
             col_labels = ["Camera SOOC (HIF)"] + col_labels
@@ -421,6 +434,9 @@ def main():
     run.add_argument("inputs", nargs="+", help="raw files or a directory of them")
     run.add_argument("--recipes", help="comma-separated slugs (default: all)")
     run.add_argument("--denoise", choices=["dxo", "none"], default="dxo")
+    run.add_argument("--dxo-timeout", type=int, default=1800,
+                     help="give up if PureRAW produces nothing for this many "
+                          "seconds (per frame, not per batch; default 1800)")
     run.add_argument("--out", default=os.path.join(here, "out"))
     run.add_argument("--work", default=default_work_dir(),
                      help="DxO cache dir (default: ~/.cache/photo-pipe)")

@@ -100,6 +100,18 @@ was used, e.g. `DSC06491-DxO_DeepPRIME 3.dng`.
 The stage is cached: a source that already has a `-DxO_*` output in the cache
 is skipped, so re-running to iterate on a look costs nothing.
 
+It is also **streamed**. PureRAW is a separate process, so the pipeline hands
+each frame to the develop stage the moment its DNG lands rather than waiting
+for the queue to drain — the two expensive stages overlap for free, and a
+frame already exported survives a later failure. Frames therefore arrive in
+whatever order PureRAW finishes them; the collage is reassembled in the order
+you asked for.
+
+`--dxo-timeout` (default 1800s) is a **stall** budget, not a budget for the
+whole batch: the clock restarts every time a frame lands, so a queue of five
+and a queue of five hundred get the same allowance for any single frame, while
+an app sitting on a modal prompt still fails instead of hanging forever.
+
 ---
 
 ## The four stages
@@ -121,6 +133,10 @@ Exports are **full resolution** by default; `--preview` does a fast 1600px
 pass for iterating on a look, and `--max-dim N` downscales to a fixed long
 edge. The collage defaults to lossless PNG (`--collage-out comparison.jpg`
 for a smaller, lossy one).
+
+The collage is opt-in (`--collage`) and so is its cost: without it, nothing
+holds a developed frame in memory after its JPEG is written, and the camera's
+HIF is never decoded at full size.
 
 Useful flags: `--max-dim N`, `--preview`, `--quality` (default 97),
 `--lift 0..1` (0 protects highlights only, 1 pushes everything to a midtone
